@@ -50,10 +50,11 @@ envs:
   - key: JUDGE_FALLBACK_MODELS
     scope: RUN_TIME
     value: deepseek-v4.1-flash,glm-5.3-flash
-  - key: LEASE_STORE
+  # Valkey (DO Managed Caching) when REDIS_URL is set; Postgres otherwise.
+  - key: REDIS_URL
     scope: RUN_TIME
-    value: postgres
-  # Keep below the account's inference tier (Tier 1: 120 RPM / 1.5M TPM).
+    type: SECRET
+  # Fallback limits per model until the response headers teach the real ones (120 RPM per model on DO).
   - key: RATE_LIMIT_RPM
     scope: RUN_TIME
     value: "100"
@@ -63,6 +64,10 @@ envs:
   - key: RATE_LIMIT_MAX_IN_FLIGHT
     scope: RUN_TIME
     value: "16"
+  # Batch evals may use 30% of each model's capacity; interactive compares keep the rest.
+  - key: RATE_LIMIT_BATCH_SHARE
+    scope: RUN_TIME
+    value: "0.3"
 
 services:
   - name: web

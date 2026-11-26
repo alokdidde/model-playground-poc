@@ -1,5 +1,13 @@
 import type { CallMetrics } from "@fomo/shared";
-import { delayHonoringRetryAfter, RateLimitExceededError, sleep, type RateLimiter, type Lease } from "@fomo/ratelimit";
+import {
+  delayHonoringRetryAfter,
+  RateLimitExceededError,
+  sleep,
+  type Lane,
+  type Lease,
+  type ObservedLimits,
+  type RateLimiter,
+} from "@fomo/ratelimit";
 import { estimateCostUsd } from "./catalog";
 import { StreamInterruptedError, UpstreamError } from "./errors";
 import { estimateInputTokens, estimateTokens, reservationFor } from "./tokens";
@@ -15,6 +23,8 @@ export interface CallOptions {
   maxAttempts?: number;
   /** How long we are willing to wait for rate-limit capacity before each attempt. */
   maxQueueWaitMs?: number;
+  /** "interactive" (a person is watching; default) or "batch" (yields capacity to interactive). */
+  lane?: Lane;
   onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
   onWait?: (info: { waitMs: number; reason: string }) => void;
 }
@@ -56,6 +66,7 @@ export class ModelGateway {
   complete(request: ChatRequest, options: CallOptions = {}): Promise<CallResult> {
     return this.run(request, options, async (signal) => {
       const result = await this.provider.complete(request, signal);
+      if (result.rateLimits) this.observe(request.model, result.rateLimits);
       return { text: result.text, usage: result.usage, ttftMs: undefined };
     });
   }
@@ -82,6 +93,10 @@ export class ModelGateway {
         for await (const chunk of this.provider.stream(request, combined)) {
           if (chunk.type === "usage") {
             usage = chunk.usage;
+            continue;
+          }
+          if (chunk.type === "limits") {
+            this.observe(request.model, chunk.limits);
             continue;
           }
           if (chunk.type === "finish") {
@@ -139,6 +154,7 @@ export class ModelGateway {
         signal: options.signal,
         maxWaitMs: options.maxQueueWaitMs ?? DEFAULTS.maxQueueWaitMs,
         onWait: options.onWait,
+        lane: options.lane,
       });
 
       const attemptStartedAt = Date.now();
@@ -174,6 +190,7 @@ export class ModelGateway {
         if (options.signal?.aborted) throw options.signal.reason ?? error;
         if (!(error instanceof UpstreamError) || !error.retryable || attempt >= maxAttempts) throw error;
 
+        if (error.rateLimits) this.observe(request.model, error.rateLimits);
         if (error.kind === "rate_limited") {
           // Tell every instance to back off, not just this one.
           await this.limiter.coolDown(request.model, error.retryAfterMs ?? 1_000).catch(() => undefined);
@@ -183,6 +200,11 @@ export class ModelGateway {
         await sleep(delayMs, options.signal);
       }
     }
+  }
+
+  /** Learns the provider's real limits from its headers. Fire and forget: never slows or fails a call. */
+  private observe(model: string, limits: ObservedLimits): void {
+    this.limiter.observe(model, limits).catch((error: unknown) => console.warn("[gateway] could not record rate limits", error));
   }
 
   /** A lease store hiccup must not turn a successful model call into a failure. */

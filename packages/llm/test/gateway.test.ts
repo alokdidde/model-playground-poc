@@ -108,4 +108,17 @@ describe("ModelGateway", () => {
     await expect(new ModelGateway(provider, limiter()).stream(request, () => {})).rejects.toThrow(/on reasoning/);
     expect(provider.calls).toBe(1); // not retryable: it would fail the same way
   });
+
+  it("feeds rate-limit headers to the limiter and takes leases in the caller's lane", async () => {
+    async function* withLimits() {
+      yield { type: "limits" as const, limits: { requestsPerWindow: 120, tokensPerWindow: 1_000_000 } };
+      yield { type: "delta" as const, text: "ok" };
+    }
+    const rl = limiter();
+    const observe = vi.spyOn(rl, "observe");
+    const acquire = vi.spyOn(rl, "acquire");
+    await new ModelGateway(new ScriptedProvider([withLimits]), rl).stream(request, () => {}, { lane: "batch" });
+    expect(observe).toHaveBeenCalledWith("m", { requestsPerWindow: 120, tokensPerWindow: 1_000_000 });
+    expect(acquire.mock.calls[0]![2]).toMatchObject({ lane: "batch" });
+  });
 });

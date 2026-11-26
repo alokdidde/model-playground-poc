@@ -1,3 +1,4 @@
+import type { ObservedLimits } from "@fomo/ratelimit";
 import type { ModelInfo, ReasoningEffort } from "@fomo/shared";
 
 export interface ChatMessage {
@@ -24,6 +25,8 @@ export interface ChatResult {
   text: string;
   /** Undefined when the provider did not report usage. */
   usage?: Usage;
+  /** Parsed x-ratelimit-* headers, when the provider sends them. */
+  rateLimits?: ObservedLimits;
 }
 
 export type StreamChunk =
@@ -32,7 +35,9 @@ export type StreamChunk =
   | { type: "thinking" }
   | { type: "usage"; usage: Usage }
   /** Why generation stopped, e.g. "stop" or "length" (ran out of max tokens). */
-  | { type: "finish"; reason: string };
+  | { type: "finish"; reason: string }
+  /** The provider's rate-limit headers for this call (sent once, before any text). */
+  | { type: "limits"; limits: ObservedLimits };
 
 /**
  * The only thing the rest of the code knows about a model provider.

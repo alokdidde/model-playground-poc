@@ -1,3 +1,5 @@
+import type { ObservedLimits } from "@fomo/ratelimit";
+
 /**
  * A failure talking to the model provider, normalised so the retry logic
  * does not need to know about SDK-specific error classes.
@@ -10,7 +12,7 @@ export class UpstreamError extends Error {
   constructor(
     readonly kind: UpstreamErrorKind,
     message: string,
-    readonly options: { status?: number; retryAfterMs?: number; cause?: unknown } = {},
+    readonly options: { status?: number; retryAfterMs?: number; cause?: unknown; rateLimits?: ObservedLimits } = {},
   ) {
     super(message, { cause: options.cause });
     this.name = "UpstreamError";
@@ -24,6 +26,11 @@ export class UpstreamError extends Error {
     return this.options.retryAfterMs;
   }
 
+  /** Rate-limit headers that came with the error response, if any. */
+  get rateLimits(): ObservedLimits | undefined {
+    return this.options.rateLimits;
+  }
+
   /** 4xx errors (bad request, unknown model, auth) will fail the same way again. */
   get retryable(): boolean {
     if (this.kind === "client" || this.kind === "bad_output") return false;
@@ -31,10 +38,10 @@ export class UpstreamError extends Error {
     return true; // timeouts and network errors
   }
 
-  static fromStatus(status: number, message: string, retryAfterMs?: number, cause?: unknown): UpstreamError {
+  static fromStatus(status: number, message: string, retryAfterMs?: number, cause?: unknown, rateLimits?: ObservedLimits): UpstreamError {
     const kind: UpstreamErrorKind =
       status === 429 ? "rate_limited" : status === 408 ? "timeout" : status >= 500 ? "server" : "client";
-    return new UpstreamError(kind, message, { status, retryAfterMs, cause });
+    return new UpstreamError(kind, message, { status, retryAfterMs, cause, rateLimits });
   }
 }
 

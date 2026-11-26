@@ -194,33 +194,54 @@ if the server sent Retry-After / retry-after-ms:
 
 Full jitter (randomising the whole delay, not adding a little noise) spreads retries from many clients evenly, so they don't all hit the provider again at the same instant after a shared 429. The OpenAI SDK's built-in retries are turned off (`maxRetries: 0`) so attempts don't multiply across two layers.
 
-### Staying under the token budget: leasing
+### Staying under the limits: leasing
 
-Retrying 429s is reactive. To stay *within* the account's limits in the first place (DO's tiers are per account, e.g. Tier 1 is 120 requests/min and 1.5M tokens/min, shared across all models), every process takes a **lease** from a shared store before calling a model:
+Retrying 429s is reactive. To stay *within* the limits in the first place, every process takes a **lease** from a shared store before calling a model.
 
-- A lease reserves **1 request** and **estimated tokens** (prompt estimate + `maxTokens`, the worst case) inside a **sliding window** (default 60 s).
-- It also occupies an **in-flight slot** until released, capping concurrency. A lease has a **TTL**, so a crashed caller cannot hold a slot forever.
-- On completion the lease is **reconciled**: the estimate is replaced by the real token count, which returns unused budget to the window. Failed attempts are charged 0 tokens for a 429/4xx (rejected before generation), and the full reservation for timeouts/5xx (unknown, so we over-count, which is the safe direction).
-- If there's no capacity, the caller waits (with jitter) until the oldest lease leaves the window, up to its wait budget (15 s interactive, 5 min batch). The UI shows "waiting for capacity".
-- When the provider still returns a 429, the gateway sets a **shared cooldown** on the bucket for the `Retry-After` period, so every web instance and the worker back off, not just the one that got the 429.
+**The real numbers.** DO doesn't publish per-model limits for serverless inference, but every response carries `x-ratelimit-*` headers. Measured on 2026-11-26 with this project's key:
 
-Because the web instances and the worker all lease from the same store, the *whole system* stays under the limit. Per-process limiters would each think they have the full budget.
-
-Budgets can be one per access key (`RATE_LIMIT_BUCKET=account`, matches how DO enforces tiers) or one per model (`model`).
-
-### Lease stores: Postgres by default, Valkey optional
-
-`LeaseStore` is a three-method interface (`tryAcquire`, `release`, `coolDown`) with three implementations that pass the same contract test suite, including a "20 concurrent acquires never over-grant" test.
-
-| | Postgres (default) | Redis / Valkey | Memory |
+| Header | glm-5.3-flash | mistral-3-14B | Notes |
 | --- | --- | --- | --- |
-| Extra infra | None (already have it) | DO Managed Caching | None |
-| Atomicity | Transaction + `pg_advisory_xact_lock(hashtext(bucket))` | One Lua script (atomic in Redis) | Single thread |
-| Clock | Database `now()` | Redis `TIME` | Process clock |
-| Cost per acquire | A short transaction (~1-3 ms) | One round trip (<1 ms) | None |
-| Good for | PoC and moderate traffic | High call rates, many instances | Unit tests, one process |
+| `limit-requests` | 120 | 120 | per minute, **per model** (each model has its own counter) |
+| `limit-tokens-per-minute` | 1,500,000 | 1,000,000 | differs by model |
+| `limit-tokens-per-day` | 45,000,000 | 30,000,000 | |
+| `remaining-tokens-per-day` | ~4.5M | ~3.0M | about 10% of the limit right after light use; we trust the smaller number |
+| `reset-*` | epoch seconds | epoch seconds | e.g. `1795712400`, the next minute boundary |
 
-Postgres is the default because the PoC should need no extra infrastructure, and at tens of calls per second a short transaction per call is negligible next to a multi-second model call. The advisory lock is per bucket, so different buckets never contend, and it is released automatically on commit or rollback. If the lease table becomes hot (hundreds of calls per second), switch `LEASE_STORE=redis`: the interface doesn't change. Both stores take time from the server, not the caller, so instances with skewed clocks still agree on the window.
+So the budget is **per (access key, model)**, not per account, and the right numbers have to be learned rather than configured.
+
+**The strategy:**
+
+1. **One bucket per (key, model).** Bucket name `gradient:<sha256(key)[:10]>:<model>`: two keys never share a budget, and the key itself is never stored. (`RATE_LIMIT_BUCKET=account` collapses to one bucket per key for providers that limit per account.)
+2. **Learn limits from headers.** The provider parses the headers on every response (and on 429 errors) and the gateway calls `limiter.observe()`. Learned limits replace the configured fallback (`RATE_LIMIT_RPM`/`TPM`, used until the first response) at 90% (`LEARNED_SAFETY`), and expire after an hour without a fresh header. If a header says a counter is at **0 remaining** (per minute or per day), the bucket is put into cooldown until that counter's reset, instead of collecting 429s.
+3. **Reserve the worst case, then reconcile.** A lease reserves 1 request and *prompt estimate + `maxTokens`* tokens inside a sliding 60 s window, plus an in-flight slot (with a TTL, so a crashed caller can't hold it). On completion the estimate is replaced with the real usage, which returns unused budget. Failed attempts are charged 0 tokens for a 429/4xx (rejected before generation) and the full reservation for timeouts/5xx (unknown, so we over-count, the safe direction).
+4. **Priority lanes.** Compare (a person watching a stream) uses the `interactive` lane; batch evals and their judge use `batch`. Batch may fill only `RATE_LIMIT_BATCH_SHARE` (default **0.3**) of each limit, counting *all* usage in the bucket, so interactive always has at least 70% of a model's capacity to itself. When the system is idle, interactive can use everything; batch never pushes a model past 30%. With 120 RPM per model that is 36 batch calls/min per model, so a 50 prompt × 3 model eval still finishes in about 1.5 minutes.
+5. **AIMD when the limits are wrong.** Each bucket has a factor (starts at 1) that scales all its limits. A 429 halves it (multiplicative decrease, at most once per cooldown so a burst of parallel 429s counts once, floor 0.1); each finished call adds 0.05 (additive increase). This finds the real capacity when another app shares the key or the provider changes limits without saying so. The 429 also sets a **shared cooldown** for the `Retry-After` period, so every instance backs off, not just the one that got it.
+6. **Waiting.** With no capacity, the caller sleeps (with jitter) until the oldest lease leaves the window, up to its wait budget (15 s interactive, 5 min batch). The UI shows "waiting for capacity".
+
+Because the web instances and the worker lease from the same store, the *whole system* stays under the limits. Per-process limiters would each think they had the full budget.
+
+The arithmetic lives in `packages/ratelimit/src/policy.ts` (`effectiveLimits`):
+
+```
+base      = learned limit × 0.9, or the configured fallback
+effective = base × aimdFactor × (lane == batch ? batchShare : 1)
+```
+
+### Lease stores: Valkey recommended, Postgres fallback
+
+`LeaseStore` is a small interface (`tryAcquire(bucket, tokens, limits, lane)`, `release`, `coolDown`, `observe`) with three implementations that pass the same contract test suite (lanes, learned limits, AIMD, reconciliation, cooldowns, and "20 concurrent acquires never over-grant"), run against real Valkey and Postgres locally.
+
+| | Valkey (DO Managed Caching) | Postgres | Memory |
+| --- | --- | --- | --- |
+| Selected by | `LEASE_STORE=redis` or just `REDIS_URL` set | `LEASE_STORE=postgres` (default without `REDIS_URL`) | `LEASE_STORE=memory` |
+| Atomicity | One Lua script per operation (`EVALSHA`) | Transaction + `pg_advisory_xact_lock(hashtext(bucket))` | Single thread |
+| Clock | Valkey `TIME` | Database `now()` | Process clock |
+| Learned limits + AIMD factor | In Valkey, shared by every instance | Per process | Per process |
+| Cost per acquire | One round trip (<1 ms) | A short transaction (~1-3 ms) | None |
+| Good for | Production: many instances, high call rates | No extra infra; moderate traffic | Unit tests, one process |
+
+Valkey is the better fit: leases are short-lived counters, Lua makes check-and-take one atomic step without table locks, keys expire on their own (no cleanup), and learned limits and the AIMD factor are shared, so one instance's 429 slows everyone down. Keys for a bucket share a `{hash tag}`, so they land on one shard if the cluster is ever sharded. Postgres stays as the fallback behind the same interface: zero extra infrastructure, and at tens of calls per second a short transaction is negligible next to a multi-second model call. Losing Valkey loses only the last minute of lease history; the worst case is a brief burst of 429s, which the retry and AIMD logic absorb.
 
 Two layers of flow control exist in the batch path and that's deliberate: DBOS queue concurrency and rate limits are **coarse, per-worker** limits that stop the worker from starting hundreds of steps that would only sit waiting; the lease store is the **precise, global** budget shared with the web app.
 

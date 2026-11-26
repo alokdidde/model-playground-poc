@@ -36,6 +36,7 @@ export function limiter() {
     maxInFlight: 100,
     windowMs: 60_000,
     leaseTtlMs: 60_000,
+    batchShare: 0.3,
   });
 }
 

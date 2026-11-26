@@ -1,4 +1,5 @@
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from "openai";
+import { parseRateLimitHeaders } from "@fomo/ratelimit";
 import type { ModelInfo } from "@fomo/shared";
 import { describeModel } from "./catalog";
 import { parseRetryAfter, UpstreamError } from "./errors";
@@ -42,14 +43,17 @@ export class GradientProvider implements ChatProvider {
 
   async complete(request: ChatRequest, signal: AbortSignal): Promise<ChatResult> {
     try {
-      const response = await this.client.chat.completions.create(
-        {
-          model: request.model,
-          messages: request.messages,
-          ...samplingParams(request),
-        },
-        { signal },
-      );
+      // withResponse() exposes the HTTP headers, where DO reports rate limits.
+      const { data: response, response: raw } = await this.client.chat.completions
+        .create(
+          {
+            model: request.model,
+            messages: request.messages,
+            ...samplingParams(request),
+          },
+          { signal },
+        )
+        .withResponse();
       const choice = response.choices[0];
       if (!choice?.message?.content?.trim() && choice?.finish_reason === "length") {
         throw new UpstreamError(
@@ -58,6 +62,7 @@ export class GradientProvider implements ChatProvider {
         );
       }
       return {
+        rateLimits: parseRateLimitHeaders((name) => raw.headers.get(name)),
         text: choice?.message?.content ?? "",
         usage: response.usage
           ? { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens }
@@ -70,16 +75,20 @@ export class GradientProvider implements ChatProvider {
 
   async *stream(request: ChatRequest, signal: AbortSignal): AsyncIterable<StreamChunk> {
     try {
-      const stream = await this.client.chat.completions.create(
-        {
-          model: request.model,
-          messages: request.messages,
-          ...samplingParams(request),
-          stream: true,
-          ...(this.config.streamUsage ? { stream_options: { include_usage: true } } : {}),
-        },
-        { signal },
-      );
+      const { data: stream, response: raw } = await this.client.chat.completions
+        .create(
+          {
+            model: request.model,
+            messages: request.messages,
+            ...samplingParams(request),
+            stream: true,
+            ...(this.config.streamUsage ? { stream_options: { include_usage: true } } : {}),
+          },
+          { signal },
+        )
+        .withResponse();
+      const limits = parseRateLimitHeaders((name) => raw.headers.get(name));
+      if (limits) yield { type: "limits", limits };
       for await (const chunk of stream) {
         const choice = chunk.choices[0];
         const text = choice?.delta?.content;
@@ -126,8 +135,10 @@ function toUpstreamError(error: unknown): unknown {
     return new UpstreamError("network", "Could not reach the model provider", { cause: error });
   }
   if (error instanceof APIError && error.status !== undefined) {
-    const retryAfterMs = error.headers ? parseRetryAfter((name) => error.headers?.get(name)) : undefined;
-    return UpstreamError.fromStatus(error.status, error.message, retryAfterMs, error);
+    const header = (name: string) => error.headers?.get(name);
+    const retryAfterMs = error.headers ? parseRetryAfter(header) : undefined;
+    const rateLimits = error.headers ? parseRateLimitHeaders(header) : undefined;
+    return UpstreamError.fromStatus(error.status, error.message, retryAfterMs, error, rateLimits);
   }
   return error;
 }

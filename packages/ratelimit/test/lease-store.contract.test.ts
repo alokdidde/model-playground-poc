@@ -15,6 +15,7 @@ const limits: Limits = {
   maxInFlight: 3,
   windowMs: 60_000,
   leaseTtlMs: 60_000,
+  batchShare: 0.4,
 };
 
 const stores: { name: string; make: () => Promise<LeaseStore> }[] = [
@@ -109,5 +110,42 @@ describe.each(stores)("$name lease store", ({ make }) => {
     const b = bucket();
     const results = await Promise.all(Array.from({ length: 20 }, () => store.tryAcquire(b, 1, limits)));
     expect(results.filter((r) => r.granted)).toHaveLength(limits.maxInFlight);
+  });
+
+  it("holds capacity back from the batch lane for interactive calls", async () => {
+    const store = await make();
+    const b = bucket();
+    // batchShare 0.4 of 3 in-flight = 1 batch slot.
+    expect((await store.tryAcquire(b, 10, limits, "batch")).granted).toBe(true);
+    expect(await store.tryAcquire(b, 10, limits, "batch")).toMatchObject({ granted: false, reason: "in_flight" });
+    // Interactive still gets the remaining two slots.
+    expect((await store.tryAcquire(b, 10, limits, "interactive")).granted).toBe(true);
+    expect((await store.tryAcquire(b, 10, limits)).granted).toBe(true);
+    // And batch counts interactive usage too: it never pushes the total past its share.
+    expect((await store.tryAcquire(b, 500, limits, "batch")).granted).toBe(false);
+  });
+
+  it("uses limits learned from response headers, with a safety margin", async () => {
+    const store = await make();
+    const b = bucket();
+    await store.observe(b, { requestsPerWindow: 3 }); // 3 x 0.9 = 2 requests
+    for (let i = 0; i < 2; i++) {
+      const r = await store.tryAcquire(b, 1, limits);
+      expect(r.granted).toBe(true);
+      if (r.granted) await store.release(r.lease, 1, limits);
+    }
+    expect(await store.tryAcquire(b, 1, limits)).toMatchObject({ granted: false, reason: "requests" });
+  });
+
+  it("halves capacity after a 429 (once for a burst of them)", async () => {
+    const store = await make();
+    const b = bucket();
+    const roomy = { ...limits, maxInFlight: 10 };
+    await Promise.all([store.coolDown(b, 100), store.coolDown(b, 100), store.coolDown(b, 100)]);
+    await new Promise((r) => setTimeout(r, 200));
+    // Factor 0.5: 5 requests -> 2. (Three halvings would leave 1.)
+    expect(await store.tryAcquire(b, 1, roomy)).toMatchObject({ granted: true });
+    expect(await store.tryAcquire(b, 1, roomy)).toMatchObject({ granted: true });
+    expect(await store.tryAcquire(b, 1, roomy)).toMatchObject({ granted: false, reason: "requests" });
   });
 });
