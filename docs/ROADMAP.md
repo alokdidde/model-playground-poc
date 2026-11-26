@@ -6,8 +6,8 @@ Each phase reuses what the previous one collected: comparisons, judge verdicts, 
 
 ## Phase 0: PoC (this repo)
 
-- Side-by-side streaming compare across DO serverless models, with cost, latency and tokens.
-- LLM-as-judge combined view (shuffled, anonymised, neutral judge) plus human votes.
+- Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
+- Combined view: LLM-as-judge scores (shuffled, anonymised, neutral judge), a synthesized answer with per-model citations, and a cost/quality/speed recommendation; thumbs up/down and votes.
 - Durable batch evals (DBOS) and a leaderboard.
 - Shared, lease-based rate limiting so the whole system stays inside the account's limits.
 
@@ -40,7 +40,7 @@ Goal: the customer stops picking models by hand.
 - **Smart routing endpoint**: an OpenAI-compatible endpoint where `model: "auto"` routes each request to the cheapest model predicted to meet a quality bar, using a small classifier trained on accumulated eval data. Customers set the policy (cost-optimised, quality-optimised, latency SLO).
 - **Fallback chains**: if the primary model is rate-limited or down, fail over to the next-best model for that task (the gateway already knows about 429s and outages).
 - **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
-- **Council / ensemble mode**: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
+- **Council / ensemble mode**: the PoC's synthesizer, promoted to an API: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
 
 ## Phase 4: Make a better model (longer term)
 
@@ -64,4 +64,5 @@ Goal: close the loop from preferences to a model tuned for the customer.
 - **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (config switch today).
 - **Leaderboard → materialised views** refreshed by the worker; eventually a column store for analytics on millions of results.
 - **API → standalone gateway service** (the `llm` + `ratelimit` packages lift out unchanged) when the routing endpoint ships; at that point a Rust or Go proxy may be worth it for per-request overhead.
+- **App Platform → DOKS** (Helm chart already in `deploy/helm`) when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
 - **DBOS → Temporal** only if orchestration needs outgrow a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.

@@ -46,8 +46,7 @@ export class GradientProvider implements ChatProvider {
         {
           model: request.model,
           messages: request.messages,
-          max_completion_tokens: request.maxTokens,
-          temperature: request.temperature,
+          ...samplingParams(request),
         },
         { signal },
       );
@@ -68,16 +67,19 @@ export class GradientProvider implements ChatProvider {
         {
           model: request.model,
           messages: request.messages,
-          max_completion_tokens: request.maxTokens,
-          temperature: request.temperature,
+          ...samplingParams(request),
           stream: true,
           ...(this.config.streamUsage ? { stream_options: { include_usage: true } } : {}),
         },
         { signal },
       );
       for await (const chunk of stream) {
-        const text = chunk.choices[0]?.delta?.content;
+        const choice = chunk.choices[0];
+        const text = choice?.delta?.content;
         if (text) yield { type: "delta", text };
+        // Reasoning models stream their thinking in a non-standard field before any answer text.
+        else if (hasReasoning(choice?.delta)) yield { type: "thinking" };
+        if (choice?.finish_reason) yield { type: "finish", reason: choice.finish_reason };
         if (chunk.usage) {
           yield {
             type: "usage",
@@ -89,6 +91,22 @@ export class GradientProvider implements ChatProvider {
       throw toUpstreamError(error);
     }
   }
+}
+
+function hasReasoning(delta: unknown): boolean {
+  if (!delta || typeof delta !== "object") return false;
+  const d = delta as { reasoning_content?: unknown; reasoning?: unknown };
+  return Boolean(d.reasoning_content || d.reasoning);
+}
+
+/** Maps our request to OpenAI-protocol params, sending only what was set. */
+function samplingParams(request: ChatRequest) {
+  return {
+    max_completion_tokens: request.maxTokens,
+    ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
+    ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+  };
 }
 
 function toUpstreamError(error: unknown): unknown {

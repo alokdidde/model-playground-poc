@@ -1,4 +1,4 @@
-import type { ModelInfo } from "@fomo/shared";
+import type { ModelInfo, ReasoningEffort } from "@fomo/shared";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -9,7 +9,10 @@ export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
   maxTokens: number;
-  temperature: number;
+  /** Left out for models that reject it (the provider default applies). */
+  temperature?: number;
+  topP?: number;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface Usage {
@@ -23,7 +26,13 @@ export interface ChatResult {
   usage?: Usage;
 }
 
-export type StreamChunk = { type: "delta"; text: string } | { type: "usage"; usage: Usage };
+export type StreamChunk =
+  | { type: "delta"; text: string }
+  /** Hidden reasoning is being produced: no answer text yet, but the model is alive. */
+  | { type: "thinking" }
+  | { type: "usage"; usage: Usage }
+  /** Why generation stopped, e.g. "stop" or "length" (ran out of max tokens). */
+  | { type: "finish"; reason: string };
 
 /**
  * The only thing the rest of the code knows about a model provider.

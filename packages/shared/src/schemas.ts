@@ -16,23 +16,60 @@ const modelId = z
 // Interactive compare
 // ---------------------------------------------------------------------------
 
-export const CompareRequestSchema = z.object({
-  prompt: z.string().trim().min(1).max(LIMITS.maxPromptChars),
-  systemPrompt: z.string().trim().max(LIMITS.maxSystemPromptChars).optional(),
-  models: z
-    .array(modelId)
-    .min(1)
-    .max(LIMITS.maxModelsPerCompare)
-    .refine((ids) => new Set(ids).size === ids.length, "Models must be unique"),
-  maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(1024),
-  temperature: z.number().min(0).max(2).default(0.7),
-  judge: z
-    .object({
-      enabled: z.boolean().default(true),
-      model: modelId.optional(),
-    })
-    .default({ enabled: true }),
-});
+export const ReasoningEffortSchema = z.enum(["low", "medium", "high"]);
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
+
+/**
+ * Per-model overrides. Every field is optional: anything left out falls back
+ * to the request-level value (temperature, maxTokens, systemPrompt) or to the
+ * provider's default (topP, reasoningEffort). Whether a model accepts a given
+ * setting is checked on the server against the model catalog.
+ */
+export const ModelSettingsSchema = z
+  .object({
+    temperature: z.number().min(0).max(2).optional(),
+    topP: z.number().gt(0).max(1).optional(),
+    maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).optional(),
+    reasoningEffort: ReasoningEffortSchema.optional(),
+    /** Replaces the shared system prompt for this model only. */
+    systemPrompt: z.string().trim().max(LIMITS.maxSystemPromptChars).optional(),
+  })
+  .strict();
+export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
+
+export const CompareRequestSchema = z
+  .object({
+    prompt: z.string().trim().min(1).max(LIMITS.maxPromptChars),
+    systemPrompt: z.string().trim().max(LIMITS.maxSystemPromptChars).optional(),
+    models: z
+      .array(modelId)
+      .min(1)
+      .max(LIMITS.maxModelsPerCompare)
+      .refine((ids) => new Set(ids).size === ids.length, "Models must be unique"),
+    maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(1024),
+    temperature: z.number().min(0).max(2).default(0.7),
+    judge: z
+      .object({
+        enabled: z.boolean().default(true),
+        model: modelId.optional(),
+      })
+      .default({ enabled: true }),
+    /** Also ask a neutral model to merge the answers into one, with attribution. */
+    synthesize: z.boolean().default(true),
+    /** Keyed by model id; every key must also be in `models`. */
+    modelSettings: z.record(modelId, ModelSettingsSchema).default({}),
+  })
+  .superRefine((req, ctx) => {
+    for (const id of Object.keys(req.modelSettings)) {
+      if (!req.models.includes(id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["modelSettings", id],
+          message: "Settings given for a model that is not in `models`",
+        });
+      }
+    }
+  });
 export type CompareRequest = z.infer<typeof CompareRequestSchema>;
 /** What the client sends (defaults not yet applied). */
 export type CompareRequestInput = z.input<typeof CompareRequestSchema>;
@@ -42,6 +79,13 @@ export const VoteRequestSchema = z.object({
   preferredModel: modelId.nullable(),
 });
 export type VoteRequest = z.infer<typeof VoteRequestSchema>;
+
+/** Thumbs up/down on one model's answer; null clears it. PUT, so repeating it is harmless. */
+export const RatingRequestSchema = z.object({
+  model: modelId,
+  rating: z.enum(["up", "down"]).nullable(),
+});
+export type RatingRequest = z.infer<typeof RatingRequestSchema>;
 
 export const IdParamsSchema = z.object({
   id: z.string().min(1).max(64),
@@ -87,10 +131,27 @@ export const LeaderboardQuerySchema = z.object({
 // Shared response shapes
 // ---------------------------------------------------------------------------
 
+export type ModelKind = "chat" | "embedding" | "reranker" | "image" | "audio" | "video" | "router";
+
+/** Which request settings a model accepts (probed against DO serverless inference). */
+export interface ModelCapabilities {
+  temperature: boolean;
+  topP: boolean;
+  reasoning: boolean;
+  /** Tool calling is not wired up in this PoC yet, so this is false for every model. */
+  tools: boolean;
+}
+
 export interface ModelInfo {
   id: string;
   label: string;
   provider: string;
+  kind: ModelKind;
+  /** False when the account's inference tier cannot call this model (DO returns 403). */
+  available: boolean;
+  /** Short catalog badges, e.g. "Reasoning", "Fast", "Long context". */
+  tags: string[];
+  capabilities: ModelCapabilities;
   /** USD per 1M tokens, when we know it. */
   pricing?: { inputPerM: number; outputPerM: number };
   contextWindow?: number;

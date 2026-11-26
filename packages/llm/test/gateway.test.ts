@@ -86,4 +86,26 @@ describe("ModelGateway", () => {
     expect(result.metrics.ttftMs).toBeDefined();
     expect(result.metrics.costUsd).toBeNull(); // "m" has no known price
   });
+
+  it("treats reasoning chunks as alive, so a slow thinker is not timed out", async () => {
+    async function* thinker() {
+      yield { type: "thinking" as const };
+      await new Promise((r) => setTimeout(r, 60));
+      yield { type: "delta" as const, text: "answer" };
+    }
+    const provider = new ScriptedProvider([thinker]);
+    const result = await new ModelGateway(provider, limiter()).stream(request, () => {}, { firstTokenTimeoutMs: 20 });
+    expect(result.output).toBe("answer");
+    expect(provider.calls).toBe(1);
+  });
+
+  it("fails clearly when the whole token budget went on reasoning", async () => {
+    async function* allThinking() {
+      yield { type: "thinking" as const };
+      yield { type: "finish" as const, reason: "length" };
+    }
+    const provider = new ScriptedProvider([allThinking]);
+    await expect(new ModelGateway(provider, limiter()).stream(request, () => {})).rejects.toThrow(/on reasoning/);
+    expect(provider.calls).toBe(1); // not retryable: it would fail the same way
+  });
 });

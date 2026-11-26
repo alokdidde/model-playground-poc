@@ -19,6 +19,10 @@ export type CompareEvent =
   | { type: "judge.started"; judgeModel: string }
   | { type: "judge.completed"; verdict: JudgeVerdict }
   | { type: "judge.failed"; problem: Problem }
+  | { type: "synthesis.started"; model: string }
+  | { type: "synthesis.delta"; text: string }
+  | { type: "synthesis.completed"; model: string; output: string; metrics: CallMetrics }
+  | { type: "synthesis.failed"; problem: Problem }
   | { type: "comparison.completed"; comparisonId: string; status: RunStatus };
 
 export type CompareEventType = CompareEvent["type"];

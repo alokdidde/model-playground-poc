@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CompareState } from "@/lib/compare-state";
 
-export function JudgePanel({ judge }: { judge: CompareState["judge"] }) {
+export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState["judge"]; label?: (id: string) => string }) {
   if (judge.status === "off") return null;
   const verdict = judge.verdict;
 
@@ -12,8 +12,8 @@ export function JudgePanel({ judge }: { judge: CompareState["judge"] }) {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Gavel className="size-4" /> Combined view
-          {judge.model && <Badge variant="outline">judge: {judge.model}</Badge>}
+          <Gavel className="text-primary size-4" /> Judge scores
+          {judge.model && <Badge variant="outline">judge: {label(judge.model)}</Badge>}
           {verdict?.selfJudged && <Badge variant="warning">judge is also a contestant</Badge>}
         </CardTitle>
         <CardDescription>
@@ -36,7 +36,7 @@ export function JudgePanel({ judge }: { judge: CompareState["judge"] }) {
         {verdict && (
           <>
             <p className="text-sm">
-              <span className="font-medium">Winner: {verdict.winnerModel ?? "none"}.</span> {verdict.rationale}
+              <span className="font-medium">Winner: {verdict.winnerModel ? label(verdict.winnerModel) : "none"}.</span> {verdict.rationale}
             </p>
             <Table>
               <TableHeader>
@@ -53,7 +53,7 @@ export function JudgePanel({ judge }: { judge: CompareState["judge"] }) {
                   .sort((a, b) => b.overall - a.overall)
                   .map((s) => (
                     <TableRow key={s.model}>
-                      <TableCell className="font-medium">{s.model}</TableCell>
+                      <TableCell className="font-medium">{label(s.model)}</TableCell>
                       <TableCell>{s.accuracy}</TableCell>
                       <TableCell>{s.helpfulness}</TableCell>
                       <TableCell>{s.clarity}</TableCell>

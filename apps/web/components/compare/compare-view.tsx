@@ -1,42 +1,64 @@
 "use client";
 
-import { useReducer, useRef, useState } from "react";
-import { Play, Square } from "lucide-react";
-import { LIMITS } from "@fomo/shared";
+import { useMemo, useReducer, useRef, useState } from "react";
+import { LIMITS, type ModelInfo } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { ModelPicker, useModels } from "@/components/model-picker";
+import { useModels } from "@/components/model-picker";
 import { fetchJson, ProblemError, streamCompare } from "@/lib/api-client";
 import { compareReducer, initialCompareState } from "@/lib/compare-state";
+import { newSelection, toRequestSettings, type SelectedModel } from "@/lib/model-settings";
+import type { Priority } from "@/lib/recommend";
 import { JudgePanel } from "./judge-panel";
-import { ModelPanel } from "./model-panel";
+import { ModelCatalog } from "./model-catalog";
+import { ModelPanel, type Rating } from "./model-panel";
+import { ModelSettingsDrawer } from "./model-settings-drawer";
+import { PromptCard } from "./prompt-card";
+import { RecommendationCard } from "./recommendation-card";
+import { SelectedModels } from "./selected-models";
+import { SynthesisCard } from "./synthesis-card";
 
 // Deliberately excludes the default judge (gpt-oss-120b) so the judge stays neutral.
 const DEFAULT_MODELS = ["deepseek-v4.1-flash", "mistral-3-14B", "glm-5.3-flash"];
 
 export function CompareView() {
   const { models, mockMode, error: modelsError } = useModels();
+  const catalog = useMemo(() => new Map<string, ModelInfo>(models.map((m) => [m.id, m])), [models]);
+  const label = (id: string) => catalog.get(id)?.label ?? id;
+
   const [prompt, setPrompt] = useState("Explain the difference between a process and a thread, with one example each.");
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [selected, setSelected] = useState<string[]>(DEFAULT_MODELS);
+  const [selected, setSelected] = useState<SelectedModel[]>(() => DEFAULT_MODELS.map(newSelection));
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [judgeEnabled, setJudgeEnabled] = useState(true);
+  const [synthesize, setSynthesize] = useState(true);
+  const [priority, setPriority] = useState<Priority>("balanced");
   const [state, dispatch] = useReducer(compareReducer, initialCompareState);
   const [vote, setVote] = useState<string | null>(null);
+  const [ratings, setRatings] = useState<Record<string, Rating>>({});
   const abortRef = useRef<AbortController | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const running = state.status === "running";
+  const finished = state.status !== "idle" && state.status !== "running";
 
   async function run() {
     const controller = new AbortController();
     abortRef.current = controller;
     setVote(null);
-    dispatch({ type: "start", models: selected, judge: judgeEnabled });
+    setRatings({});
+    const ids = selected.map((m) => m.id);
+    dispatch({ type: "start", models: ids, judge: judgeEnabled, synthesize });
+    requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     try {
       await streamCompare(
-        { prompt, systemPrompt: systemPrompt || undefined, models: selected, judge: { enabled: judgeEnabled } },
+        {
+          prompt,
+          systemPrompt: systemPrompt.trim() || undefined,
+          models: ids,
+          judge: { enabled: judgeEnabled },
+          synthesize,
+          modelSettings: Object.fromEntries(selected.map((m) => [m.id, toRequestSettings(m, catalog.get(m.id))])),
+        },
         (event) => dispatch({ type: "event", event }),
         controller.signal,
       );
@@ -52,66 +74,88 @@ export function CompareView() {
   async function castVote(model: string) {
     if (!state.comparisonId) return;
     setVote(model);
-    await fetchJson(`/api/compare/${state.comparisonId}/vote`, {
-      method: "PUT",
-      body: JSON.stringify({ preferredModel: model }),
-    }).catch(() => setVote(null));
+    await fetchJson(`/api/compare/${state.comparisonId}/vote`, { method: "PUT", body: JSON.stringify({ preferredModel: model }) }).catch(() => setVote(null));
+  }
+
+  async function rate(model: string, rating: Rating) {
+    if (!state.comparisonId) return;
+    const previous = ratings[model] ?? null;
+    setRatings((r) => ({ ...r, [model]: rating }));
+    await fetchJson(`/api/compare/${state.comparisonId}/rating`, { method: "PUT", body: JSON.stringify({ model, rating }) }).catch(() =>
+      setRatings((r) => ({ ...r, [model]: previous })),
+    );
   }
 
   const scores = new Map(state.judge.verdict?.scores.map((s) => [s.model, s]));
-  const finished = state.status !== "idle" && state.status !== "running";
+  const editing = selected.find((m) => m.id === settingsFor) ?? null;
+  const metrics = Object.fromEntries(state.order.map((id) => [id, state.panels[id]?.metrics]));
 
   return (
     <div className="space-y-6">
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">Compare models</h1>
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Compare AI models</h1>
           {mockMode && <Badge variant="warning">mock mode: canned responses, no tokens spent</Badge>}
         </div>
-        <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} maxLength={LIMITS.maxPromptChars} placeholder="Ask anything…" />
-        <Textarea
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-          rows={1}
-          maxLength={LIMITS.maxSystemPromptChars}
-          placeholder="Optional system prompt (applied to every model)"
-        />
-        {modelsError && <p className="text-destructive text-sm">Could not load models: {modelsError}</p>}
-        <ModelPicker models={models} selected={selected} onChange={setSelected} max={LIMITS.maxModelsPerCompare} />
-        <div className="flex flex-wrap items-center gap-4">
-          <Label>
-            <Checkbox checked={judgeEnabled} onCheckedChange={(v) => setJudgeEnabled(v === true)} /> Judge the answers
-          </Label>
-          <span className="text-muted-foreground text-xs">
-            {selected.length}/{LIMITS.maxModelsPerCompare} models selected
-          </span>
-          {running ? (
-            <Button variant="outline" className="ml-auto" onClick={() => abortRef.current?.abort()}>
-              <Square /> Stop
-            </Button>
-          ) : (
-            <Button className="ml-auto" disabled={!prompt.trim() || selected.length === 0} onClick={run}>
-              <Play /> Run on {selected.length} model{selected.length === 1 ? "" : "s"}
-            </Button>
-          )}
+        <p className="text-muted-foreground mt-1">Run the same prompt across several models, each with its own settings, and see which answer is worth using.</p>
+      </div>
+
+      {modelsError && <p className="text-destructive text-sm">Could not load models: {modelsError}</p>}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(300px,380px)_1fr]">
+        <div className="order-2 lg:order-1">
+          <ModelCatalog
+            models={models}
+            selectedIds={selected.map((m) => m.id)}
+            canAddMore={selected.length < LIMITS.maxModelsPerCompare}
+            onAdd={(id) => setSelected((s) => [...s, newSelection(id)])}
+          />
         </div>
-        {state.error && (
-          <p className="text-destructive text-sm">
-            {state.error.title}
-            {state.error.detail ? `: ${state.error.detail}` : ""}
-            {state.error.errors?.map((e) => ` (${e.pointer}: ${e.message})`)}
-          </p>
-        )}
-      </section>
+        <div className="order-1 min-w-0 space-y-6 lg:order-2">
+          <PromptCard
+            prompt={prompt}
+            onPromptChange={setPrompt}
+            systemPrompt={systemPrompt}
+            onSystemPromptChange={setSystemPrompt}
+            judge={judgeEnabled}
+            onJudgeChange={setJudgeEnabled}
+            synthesize={synthesize}
+            onSynthesizeChange={setSynthesize}
+            running={running}
+            canRun={Boolean(prompt.trim()) && selected.length > 0}
+            modelCount={selected.length}
+            onRun={run}
+            onStop={() => abortRef.current?.abort()}
+          />
+          {state.error && (
+            <p className="text-destructive text-sm">
+              {state.error.title}
+              {state.error.detail ? `: ${state.error.detail}` : ""}
+              {state.error.errors?.map((e) => ` (${e.pointer}: ${e.message})`)}
+            </p>
+          )}
+          <SelectedModels selected={selected} catalog={catalog} onChange={setSelected} onOpenSettings={setSettingsFor} activeId={settingsFor} />
+        </div>
+      </div>
 
       {state.order.length > 0 && (
-        <>
-          <JudgePanel judge={state.judge} />
+        <div ref={resultsRef} className="scroll-mt-4 space-y-4">
+          <h2 className="text-xl font-semibold">Results</h2>
+          {state.judge.verdict && (
+            <RecommendationCard verdict={state.judge.verdict} metrics={metrics} label={label} priority={priority} onPriorityChange={setPriority} />
+          )}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <SynthesisCard synthesis={state.synthesis} label={label} />
+            <JudgePanel judge={state.judge} label={label} />
+          </div>
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {state.order.map((model) => (
               <ModelPanel
                 key={model}
                 panel={state.panels[model]!}
+                label={label(model)}
+                rating={ratings[model] ?? null}
+                onRate={(r) => rate(model, r)}
                 score={scores.get(model)}
                 isWinner={state.judge.verdict?.winnerModel === model}
                 voted={vote === model}
@@ -120,8 +164,15 @@ export function CompareView() {
               />
             ))}
           </section>
-        </>
+        </div>
       )}
+
+      <ModelSettingsDrawer
+        model={editing}
+        info={editing ? catalog.get(editing.id) : undefined}
+        onChange={(settings) => setSelected((list) => list.map((m) => (m.id === settingsFor ? { ...m, settings } : m)))}
+        onClose={() => setSettingsFor(null)}
+      />
     </div>
   );
 }

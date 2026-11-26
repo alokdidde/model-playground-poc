@@ -2,12 +2,39 @@
 
 ## 1. The problem
 
-Customers on DigitalOcean can pick from dozens of hosted models and worry they picked the wrong one ("Model FOMO"). This PoC answers that worry two ways:
+### Framing
 
-1. **Interactive compare.** Send one prompt to up to six models at once, watch them stream side by side, and get a combined view: an independent judge model scores the anonymised answers, picks a winner and explains why, next to each model's latency, tokens and cost. The user can also vote for the answer they prefer.
-2. **Batch evals.** "Is model X better *for my workload*?" needs more than one prompt. A batch run takes a prompt set × a model set, runs every call in a durable background worker, judges each prompt, and feeds a leaderboard.
+**Model FOMO** is decision anxiety: "did I pick the right model for *my* prompts, or am I overpaying / under-serving because I don't know what else is out there?" Customers on DigitalOcean can call dozens of hosted models through one key, which makes the choice cheap to change but hard to make.
+
+**Personas**
+
+| Persona | Situation | What they need |
+| --- | --- | --- |
+| App developer (primary) | Building a feature on DO serverless inference, picked a model from a blog post. | A fast, concrete answer for their prompt: which model, at what cost and latency. |
+| Tech lead / platform owner | Owns the AI bill and quality bar for several features. | Evidence across many prompts, and a way to re-check when models change (DO keeps only the latest versions of each model). |
+| PM / non-specialist | Wants to sanity-check output quality without reading API docs. | A UI where they can compare answers and say which one is better. |
+
+**Job to be done:** *"When I'm choosing (or re-choosing) a model for a task, help me see how the alternatives compare on my prompts, so I can pick one with confidence and move on."*
+
+**What success looks like** (PoC and beyond, see ROADMAP for later phases)
+
+- Time from question to decision: one compare run gives a recommendation in under a minute.
+- Decision confidence: share of comparisons where the user votes or rates (a proxy for "this was useful"), and judge/human agreement.
+- Money saved: share of users who switch to a cheaper model at equal judge quality after validating on their prompts.
+- Reliability: compare runs completing without a model error; 429s absorbed by the gateway rather than shown to users.
+
+### How the PoC answers it
+
+1. **Interactive compare.** One prompt, up to six models, each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
+2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
+3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
+4. **Batch evals.** One prompt is an anecdote. A batch run takes a prompt set × model set, runs every call in a durable worker, judges each prompt, and feeds a leaderboard.
 
 Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-compatible, `https://inference.do-ai.run/v1`, model access key), compute on **App Platform**, state in **Managed Postgres**, optionally **Managed Caching (Valkey)**.
+
+### Caveat: what this account can call
+
+On the account this PoC runs on, every Anthropic model and every proprietary OpenAI model returns `403 "not available for your subscription tier"`; `gpt-oss-120b` and the open-weight families (DeepSeek, GLM, Kimi, Qwen, MiniMax, Mistral, NVIDIA) work. That means the demo cannot show the most common FOMO question, *"is a cheap open model good enough versus a frontier model?"*. The catalog still lists the locked models (with "Not on plan") so the experience is honest about what exists. On a higher tier nothing in the code changes.
 
 ## 2. System overview
 
@@ -64,9 +91,9 @@ sequenceDiagram
   participant A as /api/compare
   participant G as ModelGateway
   participant M as Models (parallel)
-  participant J as Judge model
-  C->>A: POST {prompt, models[]} + Idempotency-Key
-  A->>A: zod validate, insert Comparison (409 if key reused)
+  participant J as Judge / synthesizer (neutral model)
+  C->>A: POST {prompt, models[], modelSettings{}} + Idempotency-Key
+  A->>A: zod validate, capability check, insert Comparison (409 if key reused)
   A-->>C: 200 text/event-stream
   par for each model
     A->>G: stream(model)
@@ -77,9 +104,15 @@ sequenceDiagram
     A->>A: save CompareResult
     A-->>C: model.completed | model.failed (problem)
   end
-  A->>J: shuffled, anonymised answers + rubric
-  J-->>A: JSON scores, winner, rationale
-  A-->>C: judge.completed
+  par judge and synthesis
+    A->>J: shuffled, anonymised answers + rubric
+    J-->>A: JSON scores, winner, rationale
+    A-->>C: judge.completed
+  and
+    A->>J: named answers, "merge and cite"
+    J-->>A: merged answer (streamed)
+    A-->>C: synthesis.delta ... synthesis.completed
+  end
   A-->>C: comparison.completed {COMPLETED | PARTIAL | FAILED}
 ```
 
@@ -107,7 +140,32 @@ After the answers finish, a judge model scores each one on accuracy, helpfulness
 
 The judge is a second opinion, not ground truth, and the UI says so. Human votes (`PUT /api/compare/:id/vote`) are stored next to the judge's verdict. They measure judge/human agreement and are the seed data for the "learn from preferences" roadmap item.
 
-Alternatives considered: a "synthesis" answer that merges all responses (useful, but it hides which model was right, which is the whole point of FOMO; it is on the roadmap as "council" mode), and embedding-similarity consensus (cheap, but agreement is not correctness).
+### Synthesis: one merged answer, with attribution
+
+The judge tells you *which* answer is best; the synthesizer gives you *the* best answer. It runs in parallel with the judge (both only need the finished answers), uses the same neutral model, and is told to keep only what the answers contain, resolve disagreements explicitly, and cite each sentence as `[Model name]`. The UI renders citations as chips, so the merged answer never hides where each claim came from, which is the point of FOMO. The output is stored on `Comparison.synthesis`.
+
+Embedding-similarity consensus was considered and rejected: cheap, but agreement is not correctness.
+
+### Recommendation: from scores to a decision
+
+`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer ("95% as good at 1/10th of the cost"). Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one and points to batch evals.
+
+### Per-model settings and capabilities
+
+Each selected model carries its own `temperature`, `topP`, `maxTokens`, `reasoningEffort` and `systemPrompt` override (`modelSettings` in the request, validated with zod; keys must be in `models`). Not every model accepts every parameter, so on 2026-11-26 we **probed every chat model** on DO with each parameter. Findings, encoded in `packages/llm/src/catalog.ts`:
+
+| Model | Rejects |
+| --- | --- |
+| Kimi K2.6 | `temperature` (must be 1), `top_p` (must be 0.95) |
+| Kimi K3 | `top_p` (must be 0.95) |
+| Ministral 3 14B, GLM-5.2 | `reasoning_effort` |
+| All Anthropic, proprietary OpenAI, Arcee | everything (403, not on this account's tier) |
+
+The UI disables unsupported controls with the reason, the server rejects explicit unsupported settings with a 400 problem pointing at the exact field, and request-level defaults (e.g. temperature 0.7) are silently left out for models that reject them. What was actually sent is stored per result (`CompareResult.settings`) so any comparison can be reproduced.
+
+### Reasoning models and timeouts
+
+Reasoning models (GLM, Kimi, DeepSeek, gpt-oss) stream hidden "thinking" before any answer text, sometimes for 20-30 s. The original first-token timeout (20 s) killed them before they answered. The provider now reports reasoning chunks as a liveness signal (`{type: "thinking"}`), which stops the first-token timer without counting as TTFT. And if a model spends its whole `max_tokens` on reasoning (`finish_reason: "length"` with no text), the call fails with a clear, non-retryable message ("raise max tokens or lower the reasoning level") instead of showing an empty "Done" panel. The default max tokens in the UI is 2048 for this reason.
 
 ## 4. Reliability: the `ModelGateway`
 
@@ -231,15 +289,30 @@ Metrics are stored per call so the leaderboard can compute averages, win rates a
 
 `.do/app.yaml`:
 
-- **web** service: Dockerfile build, 2 instances, health check on `/api/health` (checks the database).
+- **web** service: Dockerfile build, health check on `/api/health` (checks the database).
 - **worker**: same image, `COMPONENT=worker`. Stateless; scale by adding instances (DBOS coordinates queue consumers through Postgres).
 - **migrate**: a `PRE_DEPLOY` job running `prisma migrate deploy`, so the schema is migrated before new code takes traffic.
-- **Managed Postgres** (`production: true`). DBOS uses the same database in its own `dbos` schema, so no manual database creation is needed. Locally docker compose creates a separate `fomo_dbos` database.
-- `DO_MODEL_ACCESS_KEY` is a secret env var. Optional Valkey is a commented-out block.
+- **Managed Postgres**. DBOS uses the same database in its own `dbos` schema. Locally docker compose creates a separate `fomo_dbos` database.
+- Secrets (`type: SECRET`): `DO_MODEL_ACCESS_KEY`, `DATABASE_URL`, `DBOS_SYSTEM_DATABASE_URL`. `DATABASE_CA_CERT` holds DO's CA (see below).
 
 One root `Dockerfile` builds every component; the `COMPONENT` build arg (App Platform passes `BUILD_TIME` env vars as `--build-arg`) selects the final stage.
 
+**The live PoC** runs a dev-sized variant of the spec: 1 web + 1 worker instance (`apps-s-1vcpu-1gb`), and a separately created Managed Postgres cluster (`db-s-1vcpu-1gb`, nyc3) wired in by secret URLs rather than the spec's `databases:` block (the account's database limit refused a spec-managed cluster). About $36/mo for the app plus $15/mo for the database.
+
+**TLS gotcha.** DBOS talks to Postgres through node-postgres, which treats `sslmode=require` as `verify-full`, while Prisma does not. DO Managed Postgres signs with a per-account CA, so the first deploy's batch evals hung on "self-signed certificate in certificate chain". The fix keeps full verification: `DATABASE_CA_CERT` (from `doctl databases get-ca`) is written to a temp file and passed as `sslrootcert` (`packages/db/src/dbos-url.ts`). Turning verification off was rejected.
+
 Operational notes: each process opens a Prisma pool plus a DBOS pool. Small managed Postgres plans allow about 20-25 connections, so add a connection pool (PgBouncer, built into DO Managed Postgres) before scaling out instances. SSE responses need `maxDuration` long enough for the slowest model (set to 180 s).
+
+### Why App Platform, and when DOKS
+
+| | App Platform (chosen) | DOKS + Helm (documented, not provisioned) |
+| --- | --- | --- |
+| Setup | One spec file, builds from GitHub on push, managed TLS and load balancing. | Cluster, ingress controller, cert-manager, registry, image builds in CI. |
+| Cost at PoC size | ~$36/mo (2 × 1 GB containers) | ~$41/mo minimum (1 × 4 GB node $24 + load balancer $12 + registry $5), more for HA. |
+| Operations | Nothing to patch; logs and metrics built in. | Node upgrades, ingress, cert renewals, observability are ours. |
+| Flexibility | No sidecars, no custom autoscaling signals, no GPU, per-component sizes only. | Anything Kubernetes can do: HPA on queue depth, sidecars (OTel collector), co-located self-hosted models or observability (Langfuse/SigNoz). |
+
+App Platform is the right call for the PoC and for a first production version. Move to DOKS when one of these becomes true: the worker needs to autoscale on queue depth, we self-host something next to the app (observability stack, a reranker, a small fine-tuned model on GPU nodes), or several services share one cluster. The Helm chart in `deploy/helm/model-fomo` is ready for that move (web Deployment + Service + Ingress, worker Deployment, migration Job as a pre-install/pre-upgrade hook, Secrets, probes and resources). We briefly provisioned a cluster and deleted it unused: for one app, the extra moving parts bought nothing yet.
 
 ## 9. Technology choices and tradeoffs
 
@@ -260,3 +333,5 @@ Operational notes: each process opens a Prisma pool plus a DBOS pool. Small mana
 - No auth, per-user quotas or inbound rate limiting yet (the middleware hook is where they go).
 - Prices are a static table from DO's pricing page (2026-11-26) using the base tier; long-context tiers aren't modelled.
 - The leaderboard mixes judge scores from different prompts and judges; it's indicative, not a benchmark.
+- Model capabilities and plan availability are a static table from one probe (2026-11-26). A periodic re-probe (or reading DO's model metadata, if it exposes this) would keep it current.
+- Tool calling is shown in the UI as "coming later" and is not implemented.

@@ -17,7 +17,7 @@ export class ScriptedProvider implements ChatProvider {
     let usage: ChatResult["usage"];
     for await (const c of this.stream()) {
       if (c.type === "delta") text += c.text;
-      else usage = c.usage;
+      else if (c.type === "usage") usage = c.usage;
     }
     return { text, usage };
   }

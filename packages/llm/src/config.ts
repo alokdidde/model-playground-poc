@@ -32,7 +32,7 @@ export function createGatewayFromEnv(prisma: PrismaClient): ModelGateway {
 export function judgeConfigFromEnv(): { preferred: string; fallbacks: string[] } {
   return {
     preferred: process.env.JUDGE_MODEL ?? "openai-gpt-oss-120b",
-    fallbacks: (process.env.JUDGE_FALLBACK_MODELS ?? "openai-gpt-5-nano,deepseek-v4.1-flash")
+    fallbacks: (process.env.JUDGE_FALLBACK_MODELS ?? "deepseek-v4.1-flash,glm-5.3-flash")
       .split(",")
       .map((m) => m.trim())
       .filter(Boolean),

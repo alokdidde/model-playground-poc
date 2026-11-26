@@ -48,7 +48,7 @@ export class MockProvider implements ChatProvider {
     let usage: ChatResult["usage"];
     for await (const chunk of this.stream(request, signal)) {
       if (chunk.type === "delta") text += chunk.text;
-      else usage = chunk.usage;
+      else if (chunk.type === "usage") usage = chunk.usage;
     }
     return { text, usage };
   }

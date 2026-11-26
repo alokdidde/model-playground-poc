@@ -1,10 +1,11 @@
-import { AlertTriangle, Crown, Loader2, ThumbsUp } from "lucide-react";
+import { AlertTriangle, Crown, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { JudgeScore } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ModelPanel as Panel } from "@/lib/compare-state";
 import { cn, formatMs, formatUsd } from "@/lib/utils";
+import { Markdown } from "@/components/markdown";
 
 const STATUS_BADGE: Record<Panel["status"], { label: string; variant: "secondary" | "outline" | "success" | "destructive" | "warning" }> = {
   pending: { label: "Queued", variant: "outline" },
@@ -15,8 +16,13 @@ const STATUS_BADGE: Record<Panel["status"], { label: string; variant: "secondary
   failed: { label: "Failed", variant: "destructive" },
 };
 
+export type Rating = "up" | "down" | null;
+
 export function ModelPanel({
   panel,
+  label,
+  rating,
+  onRate,
   score,
   isWinner,
   voted,
@@ -24,6 +30,9 @@ export function ModelPanel({
   onVote,
 }: {
   panel: Panel;
+  label: string;
+  rating: Rating;
+  onRate: (rating: Rating) => void;
   score?: JudgeScore;
   isWinner: boolean;
   voted: boolean;
@@ -37,7 +46,9 @@ export function ModelPanel({
     <Card className={cn("min-h-64", isWinner && "border-primary ring-primary/30 ring-2")}>
       <CardHeader>
         <div className="flex items-center gap-2">
-          <CardTitle className="truncate text-sm">{panel.model}</CardTitle>
+          <CardTitle className="truncate text-sm" title={panel.model}>
+            {label}
+          </CardTitle>
           {isWinner && <Crown className="text-primary size-4" aria-label="Judge's pick" />}
           <Badge variant={badge.variant} className="ml-auto">
             {busy && <Loader2 className="animate-spin" />}
@@ -57,8 +68,12 @@ export function ModelPanel({
             </div>
           </div>
         )}
-        <div className="max-h-96 overflow-y-auto text-sm whitespace-pre-wrap">
-          {panel.output || (busy ? <span className="text-muted-foreground">Waiting for the first token…</span> : null)}
+        <div className="max-h-96 overflow-y-auto">
+          {panel.output ? (
+            <Markdown text={panel.output} />
+          ) : busy ? (
+            <span className="text-muted-foreground text-sm">Waiting for the first token… (reasoning models think first)</span>
+          ) : null}
         </div>
       </CardContent>
 
@@ -78,9 +93,31 @@ export function ModelPanel({
         )}
         {score && <span className="font-medium">Judge: {score.overall}/10</span>}
         {canVote && (
-          <Button size="sm" variant={voted ? "default" : "outline"} className="ml-auto" onClick={onVote}>
-            <ThumbsUp /> {voted ? "Your pick" : "I prefer this"}
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="icon"
+              variant={rating === "up" ? "default" : "ghost"}
+              className="size-8"
+              aria-label="Good answer"
+              aria-pressed={rating === "up"}
+              onClick={() => onRate(rating === "up" ? null : "up")}
+            >
+              <ThumbsUp />
+            </Button>
+            <Button
+              size="icon"
+              variant={rating === "down" ? "destructive" : "ghost"}
+              className="size-8"
+              aria-label="Bad answer"
+              aria-pressed={rating === "down"}
+              onClick={() => onRate(rating === "down" ? null : "down")}
+            >
+              <ThumbsDown />
+            </Button>
+            <Button size="sm" variant={voted ? "default" : "outline"} onClick={onVote}>
+              <Crown /> {voted ? "Your pick" : "Best answer"}
+            </Button>
+          </div>
         )}
       </CardFooter>
     </Card>

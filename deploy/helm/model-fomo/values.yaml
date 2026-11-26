@@ -1,0 +1,59 @@
+# Documented scale-out path. The live PoC runs on App Platform (.do/app.yaml);
+# nothing here is provisioned. See README.md in this folder.
+
+image:
+  # Build with: docker build --build-arg COMPONENT=web -t <registry>/model-fomo-web:<tag> .
+  #             docker build --build-arg COMPONENT=worker -t <registry>/model-fomo-worker:<tag> .
+  web: registry.digitalocean.com/REGISTRY/model-fomo-web
+  worker: registry.digitalocean.com/REGISTRY/model-fomo-worker
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# DOCR integration (`doctl kubernetes cluster registry add`) creates this secret.
+imagePullSecrets: []
+
+web:
+  replicas: 2
+  port: 3000
+  resources:
+    requests: { cpu: 250m, memory: 384Mi }
+    limits: { cpu: "1", memory: 768Mi }
+
+worker:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+ingress:
+  enabled: true
+  className: nginx
+  host: model-fomo.example.com
+  # cert-manager ClusterIssuer for Let's Encrypt; leave empty to skip TLS.
+  clusterIssuer: letsencrypt-prod
+  annotations:
+    # SSE: keep streams open and unbuffered for the slowest model (180 s).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "200"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+
+# Non-secret configuration, shared by web, worker and the migration job.
+config:
+  GRADIENT_BASE_URL: https://inference.do-ai.run/v1
+  GRADIENT_MOCK: "0"
+  JUDGE_MODEL: openai-gpt-oss-120b
+  JUDGE_FALLBACK_MODELS: deepseek-v4.1-flash,glm-5.3-flash
+  LEASE_STORE: postgres
+  RATE_LIMIT_RPM: "100"
+  RATE_LIMIT_TPM: "1200000"
+  RATE_LIMIT_MAX_IN_FLIGHT: "16"
+
+# Secrets. Prefer `existingSecret` (created by your secret manager / sealed-secrets)
+# over putting values in a values file.
+secrets:
+  existingSecret: ""
+  DO_MODEL_ACCESS_KEY: ""
+  DATABASE_URL: ""
+  DBOS_SYSTEM_DATABASE_URL: ""
+  # PEM from `doctl databases get-ca <cluster-id>`; DBOS verifies TLS with it.
+  DATABASE_CA_CERT: ""
+  REDIS_URL: ""

@@ -37,7 +37,7 @@ export function ModelPicker({
 
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {models.map((m) => {
+      {models.filter((m) => m.kind === "chat" && m.available).map((m) => {
         const checked = selected.includes(m.id);
         return (
           <label key={m.id} className="hover:bg-muted/50 flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm">

@@ -43,6 +43,9 @@ model Comparison {
   requestId      String?
   createdAt      DateTime        @default(now())
   completedAt    DateTime?
+  /// One merged answer written by a neutral model, citing which model each part came from.
+  synthesis      String?
+  synthesisModel String?
   results        CompareResult[]
   judgement      Judgement?
   vote           Vote?
@@ -57,6 +60,10 @@ model CompareResult {
   model           String
   status          CallStatus
   output          String
+  /// The settings actually sent to this model (temperature, topP, maxTokens, reasoningEffort, systemPrompt)
+  settings        Json?
+  /// The user's thumbs up (1) or down (-1) on this answer, if any.
+  rating          Int?
   /// RFC 9457 problem, when status = FAILED
   problem         Json?
   latencyMs       Int

@@ -17,13 +17,20 @@ export interface CompareState {
   panels: Record<string, ModelPanel>;
   order: string[];
   judge: { status: "off" | "pending" | "running" | "done" | "failed"; model?: string; verdict?: JudgeVerdict; problem?: Problem };
+  synthesis: { status: "off" | "pending" | "running" | "done" | "failed"; model?: string; output: string; metrics?: CallMetrics; problem?: Problem };
   error?: Problem;
 }
 
-export const initialCompareState: CompareState = { status: "idle", panels: {}, order: [], judge: { status: "off" } };
+export const initialCompareState: CompareState = {
+  status: "idle",
+  panels: {},
+  order: [],
+  judge: { status: "off" },
+  synthesis: { status: "off", output: "" },
+};
 
 export type CompareAction =
-  | { type: "start"; models: string[]; judge: boolean }
+  | { type: "start"; models: string[]; judge: boolean; synthesize: boolean }
   | { type: "event"; event: CompareEvent }
   | { type: "error"; problem: Problem };
 
@@ -38,6 +45,7 @@ export function compareReducer(state: CompareState, action: CompareAction): Comp
       order: action.models,
       panels: Object.fromEntries(action.models.map((m) => [m, { model: m, status: "pending", output: "" }])),
       judge: { status: action.judge ? "pending" : "off" },
+      synthesis: { status: action.synthesize ? "pending" : "off", output: "" },
     };
   }
   if (action.type === "error") return { ...state, status: "FAILED", error: action.problem };
@@ -67,7 +75,20 @@ export function compareReducer(state: CompareState, action: CompareAction): Comp
       return { ...state, judge: { status: "done", model: e.verdict.judgeModel, verdict: e.verdict } };
     case "judge.failed":
       return { ...state, judge: { ...state.judge, status: "failed", problem: e.problem } };
+    case "synthesis.started":
+      return { ...state, synthesis: { status: "running", model: e.model, output: "" } };
+    case "synthesis.delta":
+      return { ...state, synthesis: { ...state.synthesis, output: state.synthesis.output + e.text } };
+    case "synthesis.completed":
+      return { ...state, synthesis: { status: "done", model: e.model, output: e.output, metrics: e.metrics } };
+    case "synthesis.failed":
+      return { ...state, synthesis: { ...state.synthesis, status: "failed", problem: e.problem } };
     case "comparison.completed":
-      return { ...state, status: e.status };
+      // A synthesis that never started (fewer than two answers) is simply skipped.
+      return {
+        ...state,
+        status: e.status,
+        synthesis: state.synthesis.status === "pending" ? { ...state.synthesis, status: "off" } : state.synthesis,
+      };
   }
 }

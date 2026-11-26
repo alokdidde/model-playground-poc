@@ -77,10 +77,21 @@ export class ModelGateway {
       let text = "";
       let usage: Usage | undefined;
       let ttftMs: number | undefined;
+      let finishReason: string | undefined;
       try {
         for await (const chunk of this.provider.stream(request, combined)) {
           if (chunk.type === "usage") {
             usage = chunk.usage;
+            continue;
+          }
+          if (chunk.type === "finish") {
+            finishReason = chunk.reason;
+            continue;
+          }
+          if (chunk.type === "thinking") {
+            // The model is reasoning: it is alive, so stop the first-token timer,
+            // but TTFT still measures the first visible answer token.
+            clearTimeout(timer);
             continue;
           }
           if (ttftMs === undefined) {
@@ -102,6 +113,15 @@ export class ModelGateway {
         throw upstream;
       } finally {
         clearTimeout(timer);
+      }
+      // Some SDK versions end the iterator quietly on abort instead of throwing.
+      if (!text && firstToken.signal.aborted) throw firstToken.signal.reason;
+      if (!text.trim() && finishReason === "length") {
+        // Typical for reasoning models with a small max_tokens: all of it went on thinking.
+        throw new UpstreamError(
+          "bad_output",
+          `Used all ${request.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
+        );
       }
       return { text, usage, ttftMs };
     });
