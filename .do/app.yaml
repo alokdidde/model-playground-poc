@@ -30,6 +30,11 @@ envs:
   - key: DBOS_SYSTEM_DATABASE_URL
     scope: RUN_TIME
     value: ${db.DATABASE_URL}
+  # DO Managed Postgres CA (PEM, from `doctl databases get-ca <cluster-id>`).
+  # DBOS uses node-postgres, which verifies TLS certificates; see packages/db/src/dbos-url.ts.
+  - key: DATABASE_CA_CERT
+    scope: RUN_TIME
+    value: ""
   - key: GRADIENT_BASE_URL
     scope: RUN_TIME
     value: https://inference.do-ai.run/v1

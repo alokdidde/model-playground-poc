@@ -1,5 +1,5 @@
 import { DBOSClient } from "@dbos-inc/dbos-sdk";
-import { prisma } from "@fomo/db";
+import { dbosSystemDatabaseUrl, prisma } from "@fomo/db";
 import { createGatewayFromEnv, type ModelGateway } from "@fomo/llm";
 
 /**
@@ -19,9 +19,7 @@ export function getGateway(): ModelGateway {
  */
 export function getDbosClient(): Promise<DBOSClient> {
   if (!g.dbosClient) {
-    const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
-    if (!systemDatabaseUrl) throw new Error("DBOS_SYSTEM_DATABASE_URL is not set");
-    g.dbosClient = DBOSClient.create({ systemDatabaseUrl, applicationName: "model-fomo" }).catch((error: unknown) => {
+    g.dbosClient = DBOSClient.create({ systemDatabaseUrl: dbosSystemDatabaseUrl(), applicationName: "model-fomo" }).catch((error: unknown) => {
       g.dbosClient = undefined; // let the next request try again
       throw error;
     });

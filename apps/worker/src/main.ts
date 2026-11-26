@@ -1,4 +1,5 @@
 import { DBOS } from "@dbos-inc/dbos-sdk";
+import { dbosSystemDatabaseUrl } from "@fomo/db";
 import { isMockMode } from "@fomo/llm";
 import { QUEUES } from "@fomo/shared";
 import { prisma } from "./services";
@@ -10,8 +11,7 @@ function intFromEnv(name: string, fallback: number): number {
 }
 
 async function main() {
-  const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
-  if (!systemDatabaseUrl) throw new Error("DBOS_SYSTEM_DATABASE_URL is not set");
+  const systemDatabaseUrl = dbosSystemDatabaseUrl();
 
   // Must match the applicationName the web app's DBOSClient uses.
   DBOS.setConfig({ name: "model-fomo", systemDatabaseUrl });
