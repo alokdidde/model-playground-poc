@@ -57,11 +57,11 @@ export function ScatterChart({
       .map((p) => {
         const right = sx(p.x) > W * 0.62;
         const x = right ? sx(p.x) - 9 : sx(p.x) + 9;
-        const width = p.label.length * 5.5;
+        const width = p.label.length * 6;
         const [left, rightEdge] = right ? [x - width, x] : [x, x + width];
         // A label that would run through another model's dot goes under its own dot instead.
         const hitsDot = (y: number) =>
-          points.some((o) => o !== p && sx(o.x) > left - 6 && sx(o.x) < rightEdge + 6 && Math.abs(sy(o.y) - (y - 3)) < 10);
+          points.some((o) => o !== p && sx(o.x) > left - 6 && sx(o.x) < rightEdge + 6 && Math.abs(sy(o.y) - (y - 3)) < 13);
         let y = sy(p.y) - 8;
         if (hitsDot(y)) y = sy(p.y) + 18;
         while (placed.some((q) => Math.abs(q.y - y) < 12 && Math.abs(q.x - x) < 110)) y += 12;
