@@ -1,4 +1,5 @@
 import type { JudgeScore, TaskType } from "@fomo/shared";
+import { percentile } from "@/lib/eval-report";
 import { prisma } from "./services";
 
 export interface LeaderboardRow {
@@ -13,6 +14,10 @@ export interface LeaderboardRow {
   calls: number;
   errorRate: number;
   avgLatencyMs: number | null;
+  /** Median time to first token (streamed calls). */
+  p50TtftMs: number | null;
+  /** Mean output tokens/sec (streamed calls; includes reasoning tokens). */
+  avgTokensPerSec: number | null;
   avgCostUsd: number | null;
 }
 
@@ -20,6 +25,8 @@ interface Acc {
   calls: number;
   failures: number;
   latency: number[];
+  ttft: number[];
+  tps: number[];
   cost: number[];
   scores: number[];
   wins: number;
@@ -38,20 +45,39 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
   const acc = new Map<string, Acc>();
   const get = (model: string) => {
     let a = acc.get(model);
-    if (!a) acc.set(model, (a = { calls: 0, failures: 0, latency: [], cost: [], scores: [], wins: 0, contests: 0, votes: 0 }));
+    if (!a) acc.set(model, (a = { calls: 0, failures: 0, latency: [], ttft: [], tps: [], cost: [], scores: [], wins: 0, contests: 0, votes: 0 }));
     return a;
   };
-  const addCall = (r: { model: string; status: string; latencyMs: number; costUsd: number | null }) => {
+  const addCall = (r: {
+    model: string;
+    status: string;
+    latencyMs: number;
+    ttftMs: number | null;
+    outputTokensPerSec: number | null;
+    costUsd: number | null;
+  }) => {
     const a = get(r.model);
     a.calls++;
     if (r.status === "FAILED") return void a.failures++;
     a.latency.push(r.latencyMs);
+    if (r.ttftMs !== null) a.ttft.push(r.ttftMs);
+    if (r.outputTokensPerSec !== null) a.tps.push(r.outputTokensPerSec);
     if (r.costUsd !== null) a.cost.push(r.costUsd);
   };
 
   if (source !== "compare") {
     const [results, prompts] = await Promise.all([
-      prisma.evalResult.findMany({ where: runWhere, select: { model: true, status: true, latencyMs: true, costUsd: true, score: true, runId: true, promptIndex: true } }),
+      prisma.evalResult.findMany({ where: runWhere, select: {
+          model: true,
+          status: true,
+          latencyMs: true,
+          ttftMs: true,
+          outputTokensPerSec: true,
+          costUsd: true,
+          score: true,
+          runId: true,
+          promptIndex: true,
+        }, }),
       prisma.evalPrompt.findMany({ where: { judgedAt: { not: null }, ...runWhere }, select: { runId: true, index: true, winnerModel: true } }),
     ]);
     const judged = new Set(prompts.map((p) => `${p.runId}:${p.index}`));
@@ -66,7 +92,11 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
   if (source !== "evals") {
     const comparisons = await prisma.comparison.findMany({
       where: taskType ? { taskType } : {},
-      select: { results: { select: { model: true, status: true, latencyMs: true, costUsd: true } }, judgement: true, vote: true },
+      select: {
+        results: { select: { model: true, status: true, latencyMs: true, ttftMs: true, outputTokensPerSec: true, costUsd: true } },
+        judgement: true,
+        vote: true,
+      },
     });
     for (const c of comparisons) {
       c.results.forEach(addCall);
@@ -92,6 +122,8 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
       calls: a.calls,
       errorRate: a.calls ? a.failures / a.calls : 0,
       avgLatencyMs: avg(a.latency),
+      p50TtftMs: percentile(a.ttft, 50),
+      avgTokensPerSec: avg(a.tps),
       avgCostUsd: avg(a.cost),
     }))
     .sort((x, y) => (y.avgScore ?? -1) - (x.avgScore ?? -1) || (y.winRate ?? -1) - (x.winRate ?? -1));

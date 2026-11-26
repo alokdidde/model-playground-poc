@@ -4,6 +4,7 @@ import { describeModel } from "@fomo/llm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getLeaderboard } from "@/lib/server/leaderboard";
+import { formatTps } from "@/lib/metrics";
 import { cn, formatMs, formatUsd } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                 <TableHead>Win rate</TableHead>
                 <TableHead>Human votes</TableHead>
                 <TableHead>Avg latency</TableHead>
+                <TableHead title="Median time to first token">TTFT p50</TableHead>
+                <TableHead title="Mean output tokens per second (includes reasoning tokens)">Speed</TableHead>
                 <TableHead>Avg cost / call</TableHead>
                 <TableHead>Error rate</TableHead>
                 <TableHead>Calls</TableHead>
@@ -65,6 +68,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                   <TableCell>{pct(r.winRate)}</TableCell>
                   <TableCell>{r.humanVotes}</TableCell>
                   <TableCell>{formatMs(r.avgLatencyMs === null ? null : Math.round(r.avgLatencyMs))}</TableCell>
+                  <TableCell>{formatMs(r.p50TtftMs)}</TableCell>
+                  <TableCell>{formatTps(r.avgTokensPerSec)}</TableCell>
                   <TableCell>{formatUsd(r.avgCostUsd)}</TableCell>
                   <TableCell>{pct(r.errorRate)}</TableCell>
                   <TableCell>{r.calls}</TableCell>

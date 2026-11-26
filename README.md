@@ -59,6 +59,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with Postgres and Val
 | `POST` | `/api/evals` | Create a batch eval run (optionally with `taskType`, `priority`, `modelSettings`, `sourceComparisonId`, as "Validate on my prompts" does). `202 Accepted` + `Location`. `Idempotency-Key` supported. |
 | `GET` | `/api/evals` / `/api/evals/:id` | List runs (cursor pagination) / run progress and results. |
 | `POST` | `/api/evals/:id/cancel` | Cancels the run and its child workflows. |
+| `GET` | `/api/evals/:id/export?format=csv\|json` | Every cell as CSV, or the per-model summary plus cells as JSON. |
 | `GET` | `/api/leaderboard` | Aggregated judge scores, win rates, human votes, latency, cost, errors. `?taskType=coding` filters by task type. |
 | `GET` | `/api/health` | Health check used by App Platform. |
 

@@ -7,6 +7,9 @@ import { Card } from "@/components/ui/card";
 import { PriorityPicker } from "@/components/compare/priority-picker";
 import { Markdown } from "@/components/markdown";
 import { useModels } from "@/components/model-picker";
+import type { ResultRow } from "@/lib/eval-report";
+import { formatTps } from "@/lib/metrics";
+import { EvalReport } from "./eval-report";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -27,15 +30,7 @@ interface RunDetail {
   priority: PriorityWeights | null;
   sourceComparisonId: string | null;
   prompts: { index: number; prompt: string; winnerModel: string | null; judgeRationale: string | null }[];
-  results: {
-    promptIndex: number;
-    model: string;
-    status: "SUCCEEDED" | "FAILED";
-    output: string;
-    score: number | null;
-    latencyMs: number;
-    costUsd: number | null;
-  }[];
+  results: (ResultRow & { output: string })[];
   progress: { totalCalls: number; completedCalls: number; failedCalls: number; ratio: number };
 }
 
@@ -99,6 +94,7 @@ export function EvalRunDetail({ id }: { id: string }) {
       {run.error && <p className="text-destructive text-sm">{run.error}</p>}
 
       <AggregateRecommendation run={run} label={label} />
+      <EvalReport runId={run.id} models={run.models} results={run.results} label={label} />
 
       <Table>
         <TableHeader>
@@ -132,7 +128,13 @@ export function EvalRunDetail({ id }: { id: string }) {
                         </div>
                         <div className="text-muted-foreground">
                           {formatMs(r.latencyMs)} · {formatUsd(r.costUsd)}
+                          {r.outputTokensPerSec ? ` · ${formatTps(r.outputTokensPerSec)}` : ""}
                         </div>
+                        {r.checks?.map((c) => (
+                          <Badge key={c.name} variant={c.passed ? "success" : "destructive"} title={c.detail}>
+                            {c.name === "valid_json" ? "JSON" : "reference"} {c.passed ? "✓" : "✗"}
+                          </Badge>
+                        ))}
                         <details>
                           <summary className="cursor-pointer">answer</summary>
                           <Markdown text={r.output} className="mt-1" />

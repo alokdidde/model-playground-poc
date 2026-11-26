@@ -10,3 +10,4 @@ export { GradientProvider } from "./gradient-provider";
 export { MockProvider } from "./mock-provider";
 export * from "./synthesis";
 export * from "./request";
+export * from "./checks";

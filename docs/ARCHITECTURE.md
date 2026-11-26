@@ -151,6 +151,27 @@ Embedding-similarity consensus was considered and rejected: cheap, but agreement
 
 `apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer ("95% as good at 1/10th of the cost"). Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one and offers **Validate on my prompts** (next section).
 
+### Run metrics: what we measure, and how
+
+Every call (compare, synthesis, judge, batch) goes through the gateway, which records:
+
+| Metric | Definition | Caveat |
+| --- | --- | --- |
+| TTFT | Attempt start to the first *visible* answer token | Reasoning models think first, so their TTFT includes thinking time |
+| Total latency | Attempt start to the end of the stream (the successful attempt; queueing and retries show up as `attempts`) | |
+| Speed (tokens/sec) | Output tokens / time from the first streamed chunk, answer *or* reasoning, to the end | Output tokens of reasoning models include hidden reasoning, which is billed; marked "incl. reasoning" |
+| Tokens in / out | From the provider's usage report; estimated (marked `*`) if it sends none | |
+| Cost | Tokens x list price per 1M from `catalog.ts`; unknown price shows "cost unknown", never $0 | |
+| Effective price per 1M | This call's cost / all its tokens | Shows the real blended rate, e.g. a reasoning model's "cheap" list price after thinking tokens |
+
+Speed is measured from the first chunk rather than from the request, so it is a property of the model's decoding, not of queueing or network setup; TTFT covers that part. The batch worker streams too (to nobody), so batch and compare numbers are comparable; because nobody has seen the text, a batch stream that breaks part-way is restarted (`restartInterruptedStreams`), while compare never retries a stream the user is already reading.
+
+### Evaluation report
+
+A batch run's page shows, per model: mean judge score and the three criteria (accuracy, helpfulness, clarity), wins, **automatic checks**, TTFT p50, latency p50/p95, mean speed, cost per prompt and total, and error rate, plus quality-vs-cost and quality-vs-speed charts and a CSV/JSON export (`GET /api/evals/:id/export?format=csv|json`). All of it comes from one pure function, `summariseRun()` in `apps/web/lib/eval-report.ts`.
+
+The automatic checks (`packages/llm/src/checks.ts`) are deterministic and run next to the judge, because a judge is an opinion: **matches reference** (short reference answers must appear in the output; long ones need half their key words) and **valid JSON** (for extraction tasks or prompts that ask for JSON; prose around the JSON fails, since a caller would have to strip it). When the checks and the judge disagree, that's a signal to read the answers. Percentiles use nearest rank, which is simple to explain and honest for the small samples a PoC run has.
+
 ### Validate on my prompts: from one sample to many
 
 The button on the recommendation card opens a drawer prefilled with the compare's prompt; the user adds their own, one per line (`prompt => expected` adds a reference answer for the judge). It posts a normal `POST /api/evals` with the models, per-model settings, task type and priority that the compare *actually sent* (a snapshot taken at run time, so later edits to the form don't leak in) plus `sourceComparisonId`. The compare's shared system prompt is folded into each model's `systemPrompt` because evals have no shared one. The drawer estimates cost as this compare's cost × number of prompts.

@@ -7,8 +7,9 @@
  * dies after the write but before the checkpoint, the step runs again, and
  * the second write must be harmless.
  */
-import { buildModelRequest, problemFromModelError, runJudge, settingsRecord } from "@fomo/llm";
-import type { ModelSettings, TaskType } from "@fomo/shared";
+import { buildModelRequest, problemFromModelError, runChecks, runJudge, settingsRecord } from "@fomo/llm";
+import { Prisma } from "@fomo/db";
+import type { JudgeScore, ModelSettings, TaskType } from "@fomo/shared";
 import { gateway, prisma } from "./services";
 
 export interface PromptContext {
@@ -82,7 +83,8 @@ export async function callModel(runId: string, promptIndex: number, model: strin
       // Nobody has seen the text, so a stream that breaks part-way can simply start over.
       restartInterruptedStreams: true,
     });
-    const row = { status: "SUCCEEDED" as const, output, settings, ...metrics };
+    const checks = runChecks({ prompt: ctx.prompt, expected: ctx.expected, taskType: ctx.taskType, output });
+    const row = { status: "SUCCEEDED" as const, output, settings, ...metrics, checks: checks as object[] };
     await prisma.evalResult.upsert({ where: key, create: { runId, promptIndex, model, ...row }, update: row });
     return { model, ok: true, output };
   } catch (error) {
@@ -111,7 +113,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
 
   let winnerModel: string | null = null;
   let rationale: string;
-  let scores: Map<string, number> = new Map();
+  let scores: Map<string, JudgeScore> = new Map();
   try {
     const verdict = await runJudge(
       gateway,
@@ -127,7 +129,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
     );
     winnerModel = verdict.winnerModel;
     rationale = verdict.rationale;
-    scores = new Map(verdict.scores.map((s) => [s.model, s.overall]));
+    scores = new Map(verdict.scores.map((s) => [s.model, s]));
   } catch (error) {
     rationale = `Judge failed: ${problemFromModelError(error, ctx.judgeModel).detail ?? "unknown error"}`;
   }
@@ -140,10 +142,18 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
     ...candidates.map((c) =>
       prisma.evalResult.update({
         where: { runId_promptIndex_model: { runId, promptIndex, model: c.model } },
-        data: { score: scores.get(c.model) ?? null, isWinner: c.model === winnerModel },
+        data: {
+          score: scores.get(c.model)?.overall ?? null,
+          criteria: criteriaOf(scores.get(c.model)),
+          isWinner: c.model === winnerModel,
+        },
       }),
     ),
   ]);
+}
+
+function criteriaOf(s: JudgeScore | undefined) {
+  return s ? { accuracy: s.accuracy, helpfulness: s.helpfulness, clarity: s.clarity } : Prisma.DbNull;
 }
 
 export async function finalizeRun(runId: string): Promise<void> {
