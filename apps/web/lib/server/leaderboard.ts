@@ -1,4 +1,4 @@
-import type { JudgeScore } from "@fomo/shared";
+import type { JudgeScore, TaskType } from "@fomo/shared";
 import { prisma } from "./services";
 
 export interface LeaderboardRow {
@@ -32,7 +32,9 @@ interface Acc {
  * Computed on read: fine at PoC scale. At larger scale this becomes a
  * materialised view refreshed by the worker (see ROADMAP.md).
  */
-export async function getLeaderboard(source: "all" | "evals" | "compare"): Promise<LeaderboardRow[]> {
+export async function getLeaderboard(source: "all" | "evals" | "compare", taskType?: TaskType): Promise<LeaderboardRow[]> {
+  // "Best model" depends on the job, so the table can be cut by task type.
+  const runWhere = taskType ? { run: { taskType } } : {};
   const acc = new Map<string, Acc>();
   const get = (model: string) => {
     let a = acc.get(model);
@@ -49,8 +51,8 @@ export async function getLeaderboard(source: "all" | "evals" | "compare"): Promi
 
   if (source !== "compare") {
     const [results, prompts] = await Promise.all([
-      prisma.evalResult.findMany({ select: { model: true, status: true, latencyMs: true, costUsd: true, score: true, runId: true, promptIndex: true } }),
-      prisma.evalPrompt.findMany({ where: { judgedAt: { not: null } }, select: { runId: true, index: true, winnerModel: true } }),
+      prisma.evalResult.findMany({ where: runWhere, select: { model: true, status: true, latencyMs: true, costUsd: true, score: true, runId: true, promptIndex: true } }),
+      prisma.evalPrompt.findMany({ where: { judgedAt: { not: null }, ...runWhere }, select: { runId: true, index: true, winnerModel: true } }),
     ]);
     const judged = new Set(prompts.map((p) => `${p.runId}:${p.index}`));
     for (const r of results) {
@@ -63,6 +65,7 @@ export async function getLeaderboard(source: "all" | "evals" | "compare"): Promi
 
   if (source !== "evals") {
     const comparisons = await prisma.comparison.findMany({
+      where: taskType ? { taskType } : {},
       select: { results: { select: { model: true, status: true, latencyMs: true, costUsd: true } }, judgement: true, vote: true },
     });
     for (const c of comparisons) {

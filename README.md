@@ -56,10 +56,10 @@ CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with Postgres and Val
 | `GET` | `/api/compare/:id` | Stored comparison, results, judgement, vote. |
 | `PUT` | `/api/compare/:id/vote` | "Best answer" vote (idempotent). |
 | `PUT` | `/api/compare/:id/rating` | Thumbs up/down on one model's answer: `{model, rating: "up" \| "down" \| null}`. |
-| `POST` | `/api/evals` | Create a batch eval run. `202 Accepted` + `Location`. `Idempotency-Key` supported. |
+| `POST` | `/api/evals` | Create a batch eval run (optionally with `taskType`, `priority`, `modelSettings`, `sourceComparisonId`, as "Validate on my prompts" does). `202 Accepted` + `Location`. `Idempotency-Key` supported. |
 | `GET` | `/api/evals` / `/api/evals/:id` | List runs (cursor pagination) / run progress and results. |
 | `POST` | `/api/evals/:id/cancel` | Cancels the run and its child workflows. |
-| `GET` | `/api/leaderboard` | Aggregated judge scores, win rates, human votes, latency, cost, errors. |
+| `GET` | `/api/leaderboard` | Aggregated judge scores, win rates, human votes, latency, cost, errors. `?taskType=coding` filters by task type. |
 | `GET` | `/api/health` | Health check used by App Platform. |
 
 Every error is an RFC 9457 `application/problem+json` body with a `requestId`.

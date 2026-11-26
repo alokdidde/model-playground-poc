@@ -1,15 +1,15 @@
 import type { Comparison } from "@fomo/db";
 import {
+  buildModelRequest,
   buildSynthesisRequest,
-  describeModel,
+  settingsRecord,
+  unsupportedSettings,
   judgeConfigFromEnv,
   pickJudgeModel,
   problemFromModelError,
   runJudge,
-  type ChatMessage,
-  type ChatRequest,
 } from "@fomo/llm";
-import { PROBLEM_TYPES, type CompareEvent, type CompareRequest, type FieldError, type RunStatus } from "@fomo/shared";
+import { PROBLEM_TYPES, type CompareEvent, type CompareRequest, type RunStatus } from "@fomo/shared";
 import { errors } from "./errors";
 import { logger } from "./logger";
 import { getGateway, prisma } from "./services";
@@ -23,7 +23,7 @@ const COMPARISON_DEADLINE_MS = 150_000;
  * rather than an error buried inside an event stream.
  */
 export async function createComparison(input: CompareRequest, requestId: string, idempotencyKey?: string): Promise<Comparison> {
-  const unsupported = unsupportedSettings(input);
+  const unsupported = unsupportedSettings(input.modelSettings);
   if (unsupported.length > 0) throw errors.validation(unsupported, "Some models do not accept the settings sent for them.");
   if (idempotencyKey) {
     const existing = await prisma.comparison.findUnique({ where: { idempotencyKey }, select: { id: true } });
@@ -74,7 +74,13 @@ export async function executeComparison(
   const outcomes = await Promise.all(
     input.models.map(async (model) => {
       let partial = "";
-      const request = buildModelRequest(input, model);
+      const request = buildModelRequest({
+        model,
+        prompt: input.prompt,
+        systemPrompt: input.systemPrompt,
+        defaults: { temperature: input.temperature, maxTokens: input.maxTokens },
+        settings: input.modelSettings[model],
+      });
       const settings = settingsRecord(request);
       try {
         const { output, metrics } = await gateway.stream(
@@ -221,56 +227,4 @@ async function finish(id: string, status: RunStatus) {
   await prisma.comparison
     .update({ where: { id }, data: { status, completedAt: new Date() } })
     .catch((error: unknown) => logger.error("failed to finish comparison", { id, error: String(error) }));
-}
-
-/**
- * The request actually sent to one model: its own overrides first, then the
- * request-level defaults. Settings the model rejects (per the catalog) are
- * left out so the provider default applies, e.g. Kimi K2.6 only allows
- * temperature 1.
- */
-export function buildModelRequest(input: CompareRequest, model: string): ChatRequest {
-  const own = input.modelSettings[model] ?? {};
-  const caps = describeModel(model).capabilities;
-  const systemPrompt = own.systemPrompt || input.systemPrompt;
-  const messages: ChatMessage[] = [
-    ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
-    { role: "user", content: input.prompt },
-  ];
-  return {
-    model,
-    messages,
-    maxTokens: own.maxTokens ?? input.maxTokens,
-    ...(caps.temperature ? { temperature: own.temperature ?? input.temperature } : {}),
-    ...(caps.topP && own.topP !== undefined ? { topP: own.topP } : {}),
-    ...(caps.reasoning && own.reasoningEffort ? { reasoningEffort: own.reasoningEffort } : {}),
-  };
-}
-
-/** Explicit per-model settings that the model is known to reject. */
-export function unsupportedSettings(input: CompareRequest): FieldError[] {
-  const problems: FieldError[] = [];
-  for (const [model, own] of Object.entries(input.modelSettings)) {
-    const caps = describeModel(model).capabilities;
-    const check = (field: "temperature" | "topP" | "reasoningEffort", supported: boolean) => {
-      if (own[field] !== undefined && !supported) {
-        problems.push({ pointer: `body.modelSettings.${model}.${field}`, message: `${model} does not accept ${field}` });
-      }
-    };
-    check("temperature", caps.temperature);
-    check("topP", caps.topP);
-    check("reasoningEffort", caps.reasoning);
-  }
-  return problems;
-}
-
-/** What we store with each result, so a comparison can be reproduced. */
-function settingsRecord(request: ChatRequest) {
-  return {
-    maxTokens: request.maxTokens,
-    temperature: request.temperature ?? null,
-    topP: request.topP ?? null,
-    reasoningEffort: request.reasoningEffort ?? null,
-    systemPrompt: request.messages.find((m) => m.role === "system")?.content ?? null,
-  };
 }

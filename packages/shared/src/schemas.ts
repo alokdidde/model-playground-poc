@@ -111,7 +111,8 @@ export const IdParamsSchema = z.object({
 // Batch evals
 // ---------------------------------------------------------------------------
 
-export const CreateEvalRunSchema = z.object({
+export const CreateEvalRunSchema = z
+  .object({
   name: z.string().trim().min(1).max(120),
   models: z
     .array(modelId)
@@ -129,8 +130,23 @@ export const CreateEvalRunSchema = z.object({
     .min(1)
     .max(LIMITS.maxEvalPrompts),
   judgeModel: modelId.optional(),
-  maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(512),
-});
+  // Reasoning models spend part of this budget thinking, so 512 is too tight.
+  maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(2048),
+  taskType: TaskTypeSchema.default("general"),
+  priority: PriorityWeightsSchema.optional(),
+  /** Same per-model settings as compare; keys must be in `models`. */
+  modelSettings: z.record(modelId, ModelSettingsSchema).default({}),
+  /** The comparison this run validates ("Validate on my prompts"), if any. */
+  sourceComparisonId: z.string().min(1).max(64).optional(),
+})
+  .superRefine((req, ctx) => {
+    for (const id of Object.keys(req.modelSettings)) {
+      if (!req.models.includes(id)) {
+        ctx.addIssue({ code: "custom", path: ["modelSettings", id], message: "Settings given for a model that is not in `models`" });
+      }
+    }
+  });
+
 export type CreateEvalRun = z.infer<typeof CreateEvalRunSchema>;
 export type CreateEvalRunInput = z.input<typeof CreateEvalRunSchema>;
 
@@ -141,6 +157,7 @@ export const ListQuerySchema = z.object({
 
 export const LeaderboardQuerySchema = z.object({
   source: z.enum(["all", "evals", "compare"]).default("all"),
+  taskType: TaskTypeSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------

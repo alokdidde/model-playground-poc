@@ -50,8 +50,15 @@ export class GradientProvider implements ChatProvider {
         },
         { signal },
       );
+      const choice = response.choices[0];
+      if (!choice?.message?.content?.trim() && choice?.finish_reason === "length") {
+        throw new UpstreamError(
+          "bad_output",
+          `Used all ${request.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
+        );
+      }
       return {
-        text: response.choices[0]?.message?.content ?? "",
+        text: choice?.message?.content ?? "",
         usage: response.usage
           ? { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens }
           : undefined,

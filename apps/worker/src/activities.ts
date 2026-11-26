@@ -7,7 +7,8 @@
  * dies after the write but before the checkpoint, the step runs again, and
  * the second write must be harmless.
  */
-import { problemFromModelError, runJudge } from "@fomo/llm";
+import { buildModelRequest, problemFromModelError, runJudge, settingsRecord } from "@fomo/llm";
+import type { ModelSettings, TaskType } from "@fomo/shared";
 import { gateway, prisma } from "./services";
 
 export interface PromptContext {
@@ -16,6 +17,8 @@ export interface PromptContext {
   models: string[];
   judgeModel: string;
   maxTokens: number;
+  taskType: TaskType;
+  modelSettings: Record<string, ModelSettings>;
 }
 
 export interface ModelCallOutcome {
@@ -36,7 +39,7 @@ export async function markRunStarted(runId: string): Promise<{ promptCount: numb
 export async function loadPromptContext(runId: string, index: number): Promise<PromptContext> {
   const prompt = await prisma.evalPrompt.findUniqueOrThrow({
     where: { runId_index: { runId, index } },
-    include: { run: { select: { models: true, judgeModel: true, maxTokens: true } } },
+    include: { run: { select: { models: true, judgeModel: true, maxTokens: true, taskType: true, modelSettings: true } } },
   });
   return {
     prompt: prompt.prompt,
@@ -44,6 +47,8 @@ export async function loadPromptContext(runId: string, index: number): Promise<P
     models: prompt.run.models,
     judgeModel: prompt.run.judgeModel,
     maxTokens: prompt.run.maxTokens,
+    taskType: prompt.run.taskType as TaskType,
+    modelSettings: (prompt.run.modelSettings ?? {}) as Record<string, ModelSettings>,
   };
 }
 
@@ -55,14 +60,23 @@ export async function callModel(runId: string, promptIndex: number, model: strin
   const ctx = await loadPromptContext(runId, promptIndex);
   const key = { runId_promptIndex_model: { runId, promptIndex, model } };
 
+  // Batch defaults: a low temperature for comparable runs, unless the user set one for this model.
+  const request = buildModelRequest({
+    model,
+    prompt: ctx.prompt,
+    defaults: { temperature: 0.2, maxTokens: ctx.maxTokens },
+    settings: ctx.modelSettings[model],
+  });
+  const settings = settingsRecord(request);
+
   try {
     const { output, metrics } = await gateway.complete(
-      { model, messages: [{ role: "user", content: ctx.prompt }], maxTokens: ctx.maxTokens, temperature: 0.2 },
+      request,
       // Batch work is patient: wait longer for capacity and retry more than the interactive path.
       { maxQueueWaitMs: 5 * 60_000, attemptTimeoutMs: 120_000, maxAttempts: 5 },
     );
     const { ttftMs: _notStreamed, ...measured } = metrics;
-    const row = { status: "SUCCEEDED" as const, output, ...measured };
+    const row = { status: "SUCCEEDED" as const, output, settings, ...measured };
     await prisma.evalResult.upsert({ where: key, create: { runId, promptIndex, model, ...row }, update: row });
     return { model, ok: true, output };
   } catch (error) {
@@ -70,6 +84,7 @@ export async function callModel(runId: string, promptIndex: number, model: strin
     const row = {
       status: "FAILED" as const,
       output: "",
+      settings,
       problem: problem as object,
       latencyMs: 0,
       inputTokens: 0,
@@ -97,6 +112,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
       {
         prompt: ctx.prompt,
         expected: ctx.expected ?? undefined,
+        taskType: ctx.taskType,
         candidates,
         judgeModel: ctx.judgeModel,
         selfJudged: ctx.models.includes(ctx.judgeModel),

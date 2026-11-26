@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useReducer, useRef, useState } from "react";
-import { LIMITS, TASK_TYPES, type ModelInfo, type PriorityWeights, type TaskType } from "@fomo/shared";
+import { LIMITS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type TaskType } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { useModels } from "@/components/model-picker";
 import { fetchJson, ProblemError, streamCompare } from "@/lib/api-client";
@@ -16,6 +16,15 @@ import { PromptCard } from "./prompt-card";
 import { RecommendationCard } from "./recommendation-card";
 import { SelectedModels } from "./selected-models";
 import { SynthesisCard } from "./synthesis-card";
+import { ValidateDrawer } from "./validate-drawer";
+
+/** What the last run actually sent, so "Validate on my prompts" reuses it even if the form changed since. */
+interface RunSnapshot {
+  prompt: string;
+  models: string[];
+  modelSettings: Record<string, ModelSettings>;
+  taskType: TaskType;
+}
 
 // Deliberately excludes the default judge (gpt-oss-120b) so the judge stays neutral.
 const DEFAULT_MODELS = ["deepseek-v4.1-flash", "mistral-3-14B", "glm-5.3-flash"];
@@ -43,6 +52,8 @@ export function CompareView() {
   const [state, dispatch] = useReducer(compareReducer, initialCompareState);
   const [vote, setVote] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<string, Rating>>({});
+  const [lastRun, setLastRun] = useState<RunSnapshot | null>(null);
+  const [validateOpen, setValidateOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -55,6 +66,17 @@ export function CompareView() {
     setVote(null);
     setRatings({});
     const ids = selected.map((m) => m.id);
+    const modelSettings = Object.fromEntries(selected.map((m) => [m.id, toRequestSettings(m, catalog.get(m.id))]));
+    // Evals have no shared system prompt, so carry it into each model's settings for "Validate".
+    const shared = systemPrompt.trim();
+    setLastRun({
+      prompt,
+      models: ids,
+      taskType,
+      modelSettings: Object.fromEntries(
+        Object.entries(modelSettings).map(([id, s]) => [id, shared && !s.systemPrompt ? { ...s, systemPrompt: shared } : s]),
+      ),
+    });
     dispatch({ type: "start", models: ids, judge: judgeEnabled, synthesize });
     requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     try {
@@ -67,7 +89,7 @@ export function CompareView() {
           synthesize,
           taskType,
           priority,
-          modelSettings: Object.fromEntries(selected.map((m) => [m.id, toRequestSettings(m, catalog.get(m.id))])),
+          modelSettings,
         },
         (event) => dispatch({ type: "event", event }),
         controller.signal,
@@ -99,6 +121,8 @@ export function CompareView() {
   const scores = new Map(state.judge.verdict?.scores.map((s) => [s.model, s]));
   const editing = selected.find((m) => m.id === settingsFor) ?? null;
   const metrics = Object.fromEntries(state.order.map((id) => [id, state.panels[id]?.metrics]));
+  const costs = Object.values(metrics).map((m) => m?.costUsd);
+  const costPerPrompt = costs.length && costs.every((c) => typeof c === "number") ? (costs as number[]).reduce((a, b) => a + b, 0) : null;
 
   return (
     <div className="space-y-6">
@@ -166,7 +190,8 @@ export function CompareView() {
               onPriorityChange={setPriority}
               customPriority={customPriority}
               onCustomPriorityChange={setCustomPriority}
-              taskLabel={TASK_TYPES[taskType].label}
+              taskLabel={TASK_TYPES[lastRun?.taskType ?? taskType].label}
+              onValidate={finished && state.comparisonId ? () => setValidateOpen(true) : undefined}
             />
           )}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -190,6 +215,21 @@ export function CompareView() {
             ))}
           </section>
         </div>
+      )}
+
+      {lastRun && (
+        <ValidateDrawer
+          key={state.comparisonId ?? "none"}
+          open={validateOpen}
+          onOpenChange={setValidateOpen}
+          comparisonId={state.comparisonId}
+          firstPrompt={lastRun.prompt}
+          models={lastRun.models}
+          modelSettings={lastRun.modelSettings}
+          taskType={lastRun.taskType}
+          priority={priority}
+          costPerPrompt={costPerPrompt}
+        />
       )}
 
       <ModelSettingsDrawer

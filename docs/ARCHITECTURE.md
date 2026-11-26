@@ -28,7 +28,8 @@
 1. **Interactive compare.** One prompt, up to six models, each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
 2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
-4. **Batch evals.** One prompt is an anecdote. A batch run takes a prompt set × model set, runs every call in a durable worker, judges each prompt, and feeds a leaderboard.
+4. **Batch evals.** One prompt is an anecdote. A batch run takes a prompt set × model set, runs every call in a durable worker, judges each prompt, and feeds a leaderboard that can be cut by task type.
+5. **Validate on my prompts.** From a compare result, one click turns that compare into a batch eval over the user's own prompts, with the same models, per-model settings, task type and priority. The run page recomputes the recommendation from the averages across all prompts.
 
 Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-compatible, `https://inference.do-ai.run/v1`, model access key), compute on **App Platform**, state in **Managed Postgres**, optionally **Managed Caching (Valkey)**.
 
@@ -148,7 +149,13 @@ Embedding-similarity consensus was considered and rejected: cheap, but agreement
 
 ### Recommendation: from scores to a decision
 
-`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer ("95% as good at 1/10th of the cost"). Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one and points to batch evals.
+`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer ("95% as good at 1/10th of the cost"). Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one and offers **Validate on my prompts** (next section).
+
+### Validate on my prompts: from one sample to many
+
+The button on the recommendation card opens a drawer prefilled with the compare's prompt; the user adds their own, one per line (`prompt => expected` adds a reference answer for the judge). It posts a normal `POST /api/evals` with the models, per-model settings, task type and priority that the compare *actually sent* (a snapshot taken at run time, so later edits to the form don't leak in) plus `sourceComparisonId`. The compare's shared system prompt is folded into each model's `systemPrompt` because evals have no shared one. The drawer estimates cost as this compare's cost × number of prompts.
+
+The run page then shows the same recommendation, computed by `aggregateResults()` in `recommend.ts`: per model, the mean judge score over its judged answers, mean latency and mean cost per prompt, with failures counted separately. The priority picker starts from the run's stored priority and can be changed after the fact. The leaderboard takes `?task=<type>` (UI pills, and `taskType` on `GET /api/leaderboard`), because "best model" depends on the job.
 
 ### Per-model settings and capabilities
 
@@ -219,7 +226,7 @@ Two layers of flow control exist in the batch path and that's deliberate: DBOS q
 
 ## 5. Batch path: durable evals with DBOS
 
-`POST /api/evals` writes the run (prompts, models, judge) and enqueues one workflow. The worker executes:
+`POST /api/evals` writes the run (prompts, models, judge, task type, priority, per-model settings, and the source comparison if it came from "Validate on my prompts") and enqueues one workflow. Each model call is built by the same `buildModelRequest()` as compare, so the eval runs the settings the user picked. The worker executes:
 
 ```
 evalRunWorkflow(run)                          queue: eval-runs     (2 per worker)

@@ -118,6 +118,12 @@ model EvalRun {
   models         String[]
   judgeModel     String
   maxTokens      Int
+  taskType       String       @default("general")
+  priority       Json?
+  /// Per-model settings, same shape as compare's `modelSettings`
+  modelSettings  Json?
+  /// The comparison this run validates, when started from "Validate on my prompts"
+  sourceComparisonId String?
   status         RunStatus    @default(QUEUED)
   /// The DBOS workflow id is the run id, so enqueueing twice is a no-op.
   idempotencyKey String?      @unique
@@ -166,6 +172,8 @@ model EvalResult {
   /// Judge's overall score (1-10), filled in after the judge step.
   score           Float?
   isWinner        Boolean    @default(false)
+  /// The settings actually sent to this model
+  settings        Json?
   createdAt       DateTime   @default(now())
 
   /// Natural key: makes the worker's write idempotent if a step is replayed.

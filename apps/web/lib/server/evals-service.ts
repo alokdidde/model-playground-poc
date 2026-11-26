@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Prisma, type EvalRun } from "@fomo/db";
-import { judgeConfigFromEnv, pickJudgeModel } from "@fomo/llm";
+import { judgeConfigFromEnv, pickJudgeModel, unsupportedSettings } from "@fomo/llm";
 import { QUEUES, WORKFLOWS, type CreateEvalRun } from "@fomo/shared";
 import { errors } from "./errors";
 import { logger } from "./logger";
@@ -31,6 +31,9 @@ export async function createEvalRun(input: CreateEvalRun, idempotencyKey?: strin
     if (existing) return replay(existing, requestHash);
   }
 
+  const unsupported = unsupportedSettings(input.modelSettings);
+  if (unsupported.length > 0) throw errors.validation(unsupported, "Some models do not accept the settings sent for them.");
+
   const cfg = judgeConfigFromEnv();
   const { judgeModel } = pickJudgeModel(input.models, input.judgeModel ?? cfg.preferred, input.judgeModel ? [] : cfg.fallbacks);
 
@@ -42,6 +45,10 @@ export async function createEvalRun(input: CreateEvalRun, idempotencyKey?: strin
         models: input.models,
         judgeModel,
         maxTokens: input.maxTokens,
+        taskType: input.taskType,
+        priority: input.priority,
+        modelSettings: input.modelSettings,
+        sourceComparisonId: input.sourceComparisonId,
         idempotencyKey,
         requestHash,
         totalCalls: input.prompts.length * input.models.length,
