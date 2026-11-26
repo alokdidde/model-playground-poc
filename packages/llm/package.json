@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:live": "pnpm dlx tsx scripts/live-compare.ts"
   },
   "dependencies": {
     "@fomo/db": "workspace:*",
