@@ -28,7 +28,7 @@ pnpm db:generate && pnpm db:deploy
 pnpm dev                          # web on http://localhost:3000 + the worker
 ```
 
-To use real models, create a **model access key** in the DigitalOcean control panel (Inference → Serverless), then set `MODEL_ACCESS_KEY=...` and `GRADIENT_MOCK=0` in `.env`.
+To use real models, create a **model access key** in the DigitalOcean control panel (Inference → Serverless), then set `DO_MODEL_ACCESS_KEY=...` and `GRADIENT_MOCK=0` in `.env`.
 
 Mock mode streams canned answers with realistic delays and randomly injects 429s and mid-stream failures (`MOCK_429_RATE`, `MOCK_ERROR_RATE`), so retries and partial results are visible in the UI.
 
@@ -70,5 +70,5 @@ curl -N localhost:3000/api/compare -H 'content-type: application/json' \
 
 ```bash
 doctl apps create --spec .do/app.yaml
-# then set MODEL_ACCESS_KEY (as a secret) in the app's settings
+# then set DO_MODEL_ACCESS_KEY (as a secret) in the app's settings
 ```

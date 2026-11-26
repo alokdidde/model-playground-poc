@@ -6,7 +6,7 @@ import { MockProvider } from "./mock-provider";
 import type { ChatProvider } from "./types";
 
 export function isMockMode(): boolean {
-  return process.env.GRADIENT_MOCK === "1" || !process.env.MODEL_ACCESS_KEY;
+  return process.env.GRADIENT_MOCK === "1" || !process.env.DO_MODEL_ACCESS_KEY;
 }
 
 export function createProviderFromEnv(): ChatProvider {
@@ -20,7 +20,7 @@ export function createProviderFromEnv(): ChatProvider {
   }
   return new GradientProvider({
     baseUrl: process.env.GRADIENT_BASE_URL ?? "https://inference.do-ai.run/v1",
-    apiKey: process.env.MODEL_ACCESS_KEY!,
+    apiKey: process.env.DO_MODEL_ACCESS_KEY!,
     streamUsage: process.env.GRADIENT_STREAM_USAGE !== "0",
   });
 }

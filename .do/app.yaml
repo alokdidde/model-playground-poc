@@ -1,7 +1,7 @@
 # DigitalOcean App Platform spec.
 #   doctl apps create --spec .do/app.yaml      (first deploy)
 #   doctl apps update <app-id> --spec .do/app.yaml
-# Replace the github.repo/branch and set MODEL_ACCESS_KEY as a secret in the console.
+# Replace the github.repo/branch and set DO_MODEL_ACCESS_KEY as a secret in the console.
 name: model-fomo
 region: nyc
 
@@ -33,7 +33,7 @@ envs:
   - key: GRADIENT_BASE_URL
     scope: RUN_TIME
     value: https://inference.do-ai.run/v1
-  - key: MODEL_ACCESS_KEY
+  - key: DO_MODEL_ACCESS_KEY
     scope: RUN_TIME
     type: SECRET
   - key: GRADIENT_MOCK

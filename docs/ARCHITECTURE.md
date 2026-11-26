@@ -235,7 +235,7 @@ Metrics are stored per call so the leaderboard can compute averages, win rates a
 - **worker**: same image, `COMPONENT=worker`. Stateless; scale by adding instances (DBOS coordinates queue consumers through Postgres).
 - **migrate**: a `PRE_DEPLOY` job running `prisma migrate deploy`, so the schema is migrated before new code takes traffic.
 - **Managed Postgres** (`production: true`). DBOS uses the same database in its own `dbos` schema, so no manual database creation is needed. Locally docker compose creates a separate `fomo_dbos` database.
-- `MODEL_ACCESS_KEY` is a secret env var. Optional Valkey is a commented-out block.
+- `DO_MODEL_ACCESS_KEY` is a secret env var. Optional Valkey is a commented-out block.
 
 One root `Dockerfile` builds every component; the `COMPONENT` build arg (App Platform passes `BUILD_TIME` env vars as `--build-arg`) selects the final stage.
 
