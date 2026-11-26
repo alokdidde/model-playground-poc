@@ -1,0 +1,113 @@
+# DigitalOcean App Platform spec.
+#   doctl apps create --spec .do/app.yaml      (first deploy)
+#   doctl apps update <app-id> --spec .do/app.yaml
+# Replace the github.repo/branch and set MODEL_ACCESS_KEY as a secret in the console.
+name: model-fomo
+region: nyc
+
+databases:
+  # Managed Postgres: app data (Prisma), DBOS checkpoints (schema "dbos") and rate-limit leases.
+  - name: db
+    engine: PG
+    version: "16"
+    production: true
+    cluster_name: model-fomo-pg
+    db_name: fomo
+    db_user: fomo
+  # Optional: DO Managed Caching (Valkey) for LEASE_STORE=redis. Uncomment and
+  # set LEASE_STORE=redis + REDIS_URL below to use it.
+  # - name: cache
+  #   engine: VALKEY
+  #   production: true
+  #   cluster_name: model-fomo-cache
+
+# Shared by every component.
+envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
+  # Same database as the app; DBOS keeps its tables in its own "dbos" schema.
+  - key: DBOS_SYSTEM_DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
+  - key: GRADIENT_BASE_URL
+    scope: RUN_TIME
+    value: https://inference.do-ai.run/v1
+  - key: MODEL_ACCESS_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: GRADIENT_MOCK
+    scope: RUN_TIME
+    value: "0"
+  - key: JUDGE_MODEL
+    scope: RUN_TIME
+    value: openai-gpt-oss-120b
+  - key: JUDGE_FALLBACK_MODELS
+    scope: RUN_TIME
+    value: openai-gpt-5-nano,deepseek-v4.1-flash
+  - key: LEASE_STORE
+    scope: RUN_TIME
+    value: postgres
+  # Keep below the account's inference tier (Tier 1: 120 RPM / 1.5M TPM).
+  - key: RATE_LIMIT_RPM
+    scope: RUN_TIME
+    value: "100"
+  - key: RATE_LIMIT_TPM
+    scope: RUN_TIME
+    value: "1200000"
+  - key: RATE_LIMIT_MAX_IN_FLIGHT
+    scope: RUN_TIME
+    value: "16"
+
+services:
+  - name: web
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 2
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: web
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+
+workers:
+  - name: worker
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: Dockerfile
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: worker
+
+jobs:
+  # Applies Prisma migrations before the new version takes traffic.
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+    source_dir: /
+    dockerfile_path: Dockerfile
+    run_command: pnpm --filter @fomo/db migrate:deploy
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: worker

@@ -39,7 +39,7 @@ export function apiRoute<
   QS extends z.ZodType | undefined = undefined,
   PS extends z.ZodType | undefined = undefined,
 >(definition: RouteDefinition<BS, QS, PS>) {
-  return async (req: NextRequest, segment: { params: Promise<Record<string, string>> }): Promise<Response> => {
+  return async (req: NextRequest, segment: { params: Promise<Record<string, string | string[]>> }): Promise<Response> => {
     const startedAt = Date.now();
     const requestId = req.headers.get(REQUEST_ID_HEADER) ?? crypto.randomUUID();
     const instance = req.nextUrl.pathname;

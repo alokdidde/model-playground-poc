@@ -37,7 +37,7 @@ export function EvalRuns() {
   const { models } = useModels();
   const [name, setName] = useState("Quick sanity check");
   const [prompts, setPrompts] = useState(SAMPLE_PROMPTS);
-  const [selected, setSelected] = useState<string[]>(["openai-gpt-oss-120b", "deepseek-v4.1-flash", "mistral-3-14B"]);
+  const [selected, setSelected] = useState<string[]>(["deepseek-v4.1-flash", "mistral-3-14B", "glm-5.3-flash"]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);

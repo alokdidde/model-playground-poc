@@ -14,7 +14,8 @@ import { compareReducer, initialCompareState } from "@/lib/compare-state";
 import { JudgePanel } from "./judge-panel";
 import { ModelPanel } from "./model-panel";
 
-const DEFAULT_MODELS = ["openai-gpt-oss-120b", "deepseek-v4.1-flash", "mistral-3-14B"];
+// Deliberately excludes the default judge (gpt-oss-120b) so the judge stays neutral.
+const DEFAULT_MODELS = ["deepseek-v4.1-flash", "mistral-3-14B", "glm-5.3-flash"];
 
 export function CompareView() {
   const { models, mockMode, error: modelsError } = useModels();
