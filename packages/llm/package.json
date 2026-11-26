@@ -1,0 +1,23 @@
+{
+  "name": "@fomo/llm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fomo/db": "workspace:*",
+    "@fomo/ratelimit": "workspace:*",
+    "@fomo/shared": "workspace:*",
+    "openai": "^7.65.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.12"
+  }
+}

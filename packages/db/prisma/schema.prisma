@@ -1,0 +1,189 @@
+// Application data. DBOS keeps its own workflow checkpoints in a separate
+// system database (DBOS_SYSTEM_DATABASE_URL) on the same Postgres server.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL // finished, but at least one model call failed
+  FAILED
+  CANCELLED
+}
+
+enum CallStatus {
+  SUCCEEDED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Interactive compare
+// ---------------------------------------------------------------------------
+
+model Comparison {
+  id             String          @id @default(cuid())
+  prompt         String
+  systemPrompt   String?
+  models         String[]
+  maxTokens      Int
+  temperature    Float
+  status         RunStatus       @default(RUNNING)
+  /// Optional client-supplied key; a retried POST with the same key is rejected with 409.
+  idempotencyKey String?         @unique
+  requestId      String?
+  createdAt      DateTime        @default(now())
+  completedAt    DateTime?
+  results        CompareResult[]
+  judgement      Judgement?
+  vote           Vote?
+
+  @@index([createdAt])
+}
+
+model CompareResult {
+  id              String     @id @default(cuid())
+  comparisonId    String
+  comparison      Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  model           String
+  status          CallStatus
+  output          String
+  /// RFC 9457 problem, when status = FAILED
+  problem         Json?
+  latencyMs       Int
+  ttftMs          Int?
+  inputTokens     Int
+  outputTokens    Int
+  tokensEstimated Boolean
+  costUsd         Float?
+  attempts        Int
+  createdAt       DateTime   @default(now())
+
+  @@unique([comparisonId, model])
+  @@index([model])
+}
+
+model Judgement {
+  id           String     @id @default(cuid())
+  comparisonId String     @unique
+  comparison   Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  judgeModel   String
+  selfJudged   Boolean
+  winnerModel  String?
+  rationale    String
+  /// JudgeScore[]
+  scores       Json
+  latencyMs    Int
+  costUsd      Float?
+  createdAt    DateTime   @default(now())
+}
+
+/// A human preference. These are the seed data for the "learn from votes" roadmap item.
+model Vote {
+  id             String     @id @default(cuid())
+  comparisonId   String     @unique
+  comparison     Comparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+  preferredModel String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Batch evals (executed by the DBOS worker)
+// ---------------------------------------------------------------------------
+
+model EvalRun {
+  id             String       @id @default(cuid())
+  name           String
+  models         String[]
+  judgeModel     String
+  maxTokens      Int
+  status         RunStatus    @default(QUEUED)
+  /// The DBOS workflow id is the run id, so enqueueing twice is a no-op.
+  idempotencyKey String?      @unique
+  /// sha256 of the request body, to detect a key reused with a different payload.
+  requestHash    String?
+  totalCalls     Int
+  error          String?
+  createdAt      DateTime     @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  prompts        EvalPrompt[]
+  results        EvalResult[]
+
+  @@index([createdAt])
+}
+
+model EvalPrompt {
+  id            String    @id @default(cuid())
+  runId         String
+  run           EvalRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  index         Int
+  prompt        String
+  expected      String?
+  winnerModel   String?
+  judgeRationale String?
+  judgedAt      DateTime?
+
+  @@unique([runId, index])
+}
+
+model EvalResult {
+  id              String     @id @default(cuid())
+  runId           String
+  run             EvalRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  promptIndex     Int
+  model           String
+  status          CallStatus
+  output          String
+  problem         Json?
+  latencyMs       Int
+  inputTokens     Int
+  outputTokens    Int
+  tokensEstimated Boolean
+  costUsd         Float?
+  attempts        Int
+  /// Judge's overall score (1-10), filled in after the judge step.
+  score           Float?
+  isWinner        Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+
+  /// Natural key: makes the worker's write idempotent if a step is replayed.
+  @@unique([runId, promptIndex, model])
+  @@index([model])
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting: the Postgres lease store (see packages/ratelimit)
+// ---------------------------------------------------------------------------
+
+/// One row per granted lease. A lease reserves 1 request and N estimated tokens
+/// in a sliding window; it is reconciled with real usage when the call finishes.
+model RateLease {
+  id             String    @id
+  bucket         String
+  tokensReserved Int       @map("tokens_reserved")
+  tokensActual   Int?      @map("tokens_actual")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  /// In-flight leases count toward the concurrency cap until released or expired.
+  expiresAt      DateTime  @map("expires_at")
+  releasedAt     DateTime? @map("released_at")
+
+  @@index([bucket, createdAt])
+  @@map("rate_lease")
+}
+
+/// Set when the provider returns 429, so every instance backs off, not just the one that got it.
+model RateCooldown {
+  bucket String   @id
+  until  DateTime
+
+  @@map("rate_cooldown")
+}
