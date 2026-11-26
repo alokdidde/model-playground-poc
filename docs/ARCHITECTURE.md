@@ -172,6 +172,17 @@ A batch run's page shows, per model: mean judge score and the three criteria (ac
 
 The automatic checks (`packages/llm/src/checks.ts`) are deterministic and run next to the judge, because a judge is an opinion: **matches reference** (short reference answers must appear in the output; long ones need half their key words) and **valid JSON** (for extraction tasks or prompts that ask for JSON; prose around the JSON fails, since a caller would have to strip it). When the checks and the judge disagree, that's a signal to read the answers. Percentiles use nearest rank, which is simple to explain and honest for the small samples a PoC run has.
 
+### Ask FOMO: a use case in plain words
+
+`/advisor` takes a description like "a support chatbot, high volume, replies start in under 2 seconds" and answers "which model should I try?". The design rule: **the model reads and writes language; our code makes the decision.**
+
+1. **Parse (LLM).** The house model (the judge model, `openai-gpt-oss-120b`) turns the text into strict JSON: task type, quality/cost/speed weights (normalised to shares), hard limits only if stated (cost per call, time until the answer starts), three realistic sample prompts, and a one-line summary. zod validates it; one re-ask on bad JSON, as with the judge. The prompt forbids naming models.
+2. **Rank (code).** `rank()` in `apps/web/lib/advisor-rank.ts` reads the leaderboard filtered to that task type (falling back to all runs if fewer than two models have judged data, and saying so), scores each model with the same weighted sum as the compare recommendation (`rankCandidates`), and moves models that break a stated limit to the bottom, labelled. Models never judged are listed as "not ranked yet" rather than guessed.
+3. **Explain (LLM).** The same model gets the need, the weights and the ranking table (numbers only) and writes 3 to 5 sentences, told to use only those numbers. If this call fails, the ranking still shows.
+4. **Act.** "Compare the top 3" opens Compare prefilled (models, first sample prompt, task type, weights, via query string); "Run an eval" starts a batch eval on the sample prompts.
+
+Because the ranking comes from measured runs, the advisor can't hallucinate benchmarks or favour a model it "likes", and its answer gets better as more compares and evals are run. The trade-off: with little data it can only rank what has been measured, which the page states.
+
 ### Validate on my prompts: from one sample to many
 
 The button on the recommendation card opens a drawer prefilled with the compare's prompt; the user adds their own, one per line (`prompt => expected` adds a reference answer for the judge). It posts a normal `POST /api/evals` with the models, per-model settings, task type and priority that the compare *actually sent* (a snapshot taken at run time, so later edits to the form don't leak in) plus `sourceComparisonId`. The compare's shared system prompt is folded into each model's `systemPrompt` because evals have no shared one. The drawer estimates cost as this compare's cost × number of prompts.

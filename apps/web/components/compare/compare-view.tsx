@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useReducer, useRef, useState } from "react";
-import { LIMITS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type TaskType } from "@fomo/shared";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { LIMITS, TASK_TYPE_IDS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type TaskType } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { useModels } from "@/components/model-picker";
 import { fetchJson, ProblemError, streamCompare } from "@/lib/api-client";
@@ -44,6 +44,22 @@ export function CompareView() {
   const [taskType, setTaskType] = useState<TaskType>("general");
   const [priority, setPriority] = useState<PriorityWeights>(PRIORITY_WEIGHTS.balanced);
   const [customPriority, setCustomPriority] = useState(false);
+
+  // Prefill from a link, e.g. "Compare the top 3" on Ask FOMO: ?models=a,b&prompt=...&task=coding&priority=q,c,s
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const models = q.get("models")?.split(",").filter(Boolean).slice(0, LIMITS.maxModelsPerCompare);
+    if (models?.length) setSelected(models.map(newSelection));
+    const p = q.get("prompt");
+    if (p) setPrompt(p);
+    const task = q.get("task");
+    if (task && (TASK_TYPE_IDS as readonly string[]).includes(task)) setTaskType(task as TaskType);
+    const [quality, cost, speed] = (q.get("priority") ?? "").split(",").map(Number);
+    if ([quality, cost, speed].every((n) => n !== undefined && Number.isFinite(n) && n >= 0 && n <= 1) && quality! + cost! + speed! > 0) {
+      setPriority({ quality: quality!, cost: cost!, speed: speed! });
+      setCustomPriority(true);
+    }
+  }, []);
 
   // Picking a task type suggests its default priority, unless the user has set custom weights.
   function changeTaskType(t: TaskType) {

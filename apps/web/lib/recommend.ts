@@ -69,8 +69,12 @@ export interface Recommendation {
   speedRatio: number;
 }
 
-export function recommend(candidates: Candidate[], weights: PriorityWeights | Priority): Recommendation | null {
-  if (candidates.length === 0) return null;
+/**
+ * Scores every candidate 0..1 for the given priority: a weighted sum of
+ * quality (judge score / 10), cost (cheapest / this) and speed (fastest / this).
+ * Highest value first; ties go to higher quality.
+ */
+export function rankCandidates(candidates: Candidate[], weights: PriorityWeights | Priority): { model: string; value: number }[] {
   const w = normalise(typeof weights === "string" ? PRIORITY_WEIGHTS[weights] : weights);
   const costs = candidates.map((c) => c.metrics.costUsd).filter((c): c is number => c !== null && c > 0);
   const minCost = costs.length ? Math.min(...costs) : null;
@@ -83,10 +87,18 @@ export function recommend(candidates: Candidate[], weights: PriorityWeights | Pr
     const speed = c.metrics.latencyMs > 0 ? minLatency / c.metrics.latencyMs : 1;
     return w.quality * quality + w.cost * cost + w.speed * speed;
   };
+  return candidates
+    .map((c) => ({ model: c.model, value: value(c), quality: c.score.overall }))
+    .sort((a, b) => b.value - a.value || b.quality - a.quality)
+    .map(({ model, value }) => ({ model, value: Math.round(value * 1000) / 1000 }));
+}
 
+export function recommend(candidates: Candidate[], weights: PriorityWeights | Priority): Recommendation | null {
+  if (candidates.length === 0) return null;
   const byQuality = [...candidates].sort((a, b) => b.score.overall - a.score.overall || a.metrics.latencyMs - b.metrics.latencyMs);
   const best = byQuality[0]!;
-  const pick = [...candidates].sort((a, b) => value(b) - value(a) || b.score.overall - a.score.overall)[0]!;
+  const pickId = rankCandidates(candidates, weights)[0]!.model;
+  const pick = candidates.find((c) => c.model === pickId)!;
 
   const pickCost = pick.metrics.costUsd;
   const bestCost = best.metrics.costUsd;

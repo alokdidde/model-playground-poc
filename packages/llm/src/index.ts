@@ -11,3 +11,4 @@ export { MockProvider } from "./mock-provider";
 export * from "./synthesis";
 export * from "./request";
 export * from "./checks";
+export * from "./advisor";

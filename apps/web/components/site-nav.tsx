@@ -9,6 +9,7 @@ const NAV = [
   { href: "/", label: "Compare" },
   { href: "/evals", label: "Batch evals" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/advisor", label: "Ask FOMO" },
 ];
 
 export function SiteNav() {
