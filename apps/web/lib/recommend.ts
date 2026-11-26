@@ -1,4 +1,4 @@
-import type { CallMetrics, JudgeScore } from "@fomo/shared";
+import type { CallMetrics, JudgeScore, PriorityWeights, TaskType } from "@fomo/shared";
 
 /**
  * Turns the judge's scores plus cost and latency into one recommendation:
@@ -9,16 +9,47 @@ import type { CallMetrics, JudgeScore } from "@fomo/shared";
  *   quality = judge overall / 10
  *   cost    = cheapest cost / this cost      (1 = cheapest)
  *   speed   = fastest latency / this latency (1 = fastest)
- * and the pick maximises the weighted sum for the user's chosen priority.
+ * and the pick maximises the weighted sum for the user's weights (presets or
+ * custom, normalised to sum to 1).
  */
 export type Priority = "quality" | "balanced" | "cost" | "speed";
 
-export const PRIORITY_WEIGHTS: Record<Priority, { quality: number; cost: number; speed: number }> = {
+export const PRIORITY_WEIGHTS: Record<Priority, PriorityWeights> = {
   quality: { quality: 1, cost: 0, speed: 0 },
   balanced: { quality: 0.6, cost: 0.25, speed: 0.15 },
   cost: { quality: 0.4, cost: 0.6, speed: 0 },
   speed: { quality: 0.4, cost: 0, speed: 0.6 },
 };
+
+/**
+ * A sensible starting priority per task type; the user can always change it.
+ * Code and maths need the right answer; extraction and summaries are
+ * high-volume, so cost matters; chat is latency-sensitive.
+ */
+export const TASK_DEFAULT_PRIORITY: Record<TaskType, Priority> = {
+  general: "balanced",
+  coding: "quality",
+  reasoning: "quality",
+  writing: "balanced",
+  summarization: "cost",
+  extraction: "cost",
+  chat: "speed",
+};
+
+/** The preset these weights match, or null for custom weights. */
+export function presetFor(w: PriorityWeights): Priority | null {
+  const n = normalise(w);
+  for (const [name, preset] of Object.entries(PRIORITY_WEIGHTS) as [Priority, PriorityWeights][]) {
+    const p = normalise(preset);
+    if (Math.abs(p.quality - n.quality) < 0.01 && Math.abs(p.cost - n.cost) < 0.01 && Math.abs(p.speed - n.speed) < 0.01) return name;
+  }
+  return null;
+}
+
+export function normalise(w: PriorityWeights): PriorityWeights {
+  const sum = w.quality + w.cost + w.speed || 1;
+  return { quality: w.quality / sum, cost: w.cost / sum, speed: w.speed / sum };
+}
 
 export interface Candidate {
   model: string;
@@ -38,9 +69,9 @@ export interface Recommendation {
   speedRatio: number;
 }
 
-export function recommend(candidates: Candidate[], priority: Priority): Recommendation | null {
+export function recommend(candidates: Candidate[], weights: PriorityWeights | Priority): Recommendation | null {
   if (candidates.length === 0) return null;
-  const w = PRIORITY_WEIGHTS[priority];
+  const w = normalise(typeof weights === "string" ? PRIORITY_WEIGHTS[weights] : weights);
   const costs = candidates.map((c) => c.metrics.costUsd).filter((c): c is number => c !== null && c > 0);
   const minCost = costs.length ? Math.min(...costs) : null;
   const minLatency = Math.min(...candidates.map((c) => c.metrics.latencyMs));

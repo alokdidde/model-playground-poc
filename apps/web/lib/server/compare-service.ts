@@ -41,6 +41,8 @@ export async function createComparison(input: CompareRequest, requestId: string,
       models: input.models,
       maxTokens: input.maxTokens,
       temperature: input.temperature,
+      taskType: input.taskType,
+      priority: input.priority,
       idempotencyKey,
       requestId,
     },
@@ -129,7 +131,7 @@ export async function executeComparison(
 
   // The judge and the synthesizer only need the answers, so they run side by side.
   await Promise.all([
-    judge ? runJudgeStep(comparison.id, input.prompt, succeeded, judge, gateway, signal, emit) : undefined,
+    judge ? runJudgeStep(comparison.id, input, succeeded, judge, gateway, signal, emit) : undefined,
     input.synthesize && enough ? runSynthesisStep(comparison.id, input.prompt, succeeded, neutralModel, gateway, signal, emit) : undefined,
   ]);
 
@@ -149,7 +151,7 @@ function pickNeutralModel(models: string[], cfg: { preferred: string; fallbacks:
 
 async function runJudgeStep(
   comparisonId: string,
-  prompt: string,
+  input: CompareRequest,
   succeeded: Answer[],
   judge: { judgeModel: string; selfJudged: boolean },
   gateway: Gateway,
@@ -172,7 +174,7 @@ async function runJudgeStep(
   try {
     const verdict = await runJudge(
       gateway,
-      { prompt, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
+      { prompt: input.prompt, taskType: input.taskType, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
       { signal },
     );
     await prisma.judgement.create({

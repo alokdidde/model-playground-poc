@@ -24,3 +24,13 @@ describe("recommend", () => {
     expect(recommend([c("known", 8, 0.002, 1000), c("unknown", 8, null, 1000)], "cost")?.pick).toBe("known");
   });
 });
+
+describe("priority weights", () => {
+  it("accepts custom weights and recognises presets", async () => {
+    const { presetFor, recommend: rec } = await import("../lib/recommend");
+    expect(presetFor({ quality: 6, cost: 2.5, speed: 1.5 })).toBe("balanced");
+    expect(presetFor({ quality: 0.5, cost: 0.5, speed: 0 })).toBeNull();
+    const cands = [c("big", 10, 0.01, 4000), c("small", 9, 0.001, 1000)];
+    expect(rec(cands, { quality: 0, cost: 0, speed: 1 })?.pick).toBe("small");
+  });
+});

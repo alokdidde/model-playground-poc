@@ -1,17 +1,11 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
-import type { CallMetrics, JudgeVerdict } from "@fomo/shared";
+import type { CallMetrics, JudgeVerdict, PriorityWeights } from "@fomo/shared";
 import { Card } from "@/components/ui/card";
-import { describeRecommendation, recommend, type Priority } from "@/lib/recommend";
-import { cn, formatMs, formatUsd } from "@/lib/utils";
-
-const PRIORITIES: { value: Priority; label: string }[] = [
-  { value: "quality", label: "Quality" },
-  { value: "balanced", label: "Balanced" },
-  { value: "cost", label: "Cost" },
-  { value: "speed", label: "Speed" },
-];
+import { describeRecommendation, recommend } from "@/lib/recommend";
+import { formatMs, formatUsd } from "@/lib/utils";
+import { PriorityPicker } from "./priority-picker";
 
 /** "Which one should I use?" — the judge's quality score traded off against cost and latency. */
 export function RecommendationCard({
@@ -20,12 +14,18 @@ export function RecommendationCard({
   label,
   priority,
   onPriorityChange,
+  customPriority,
+  onCustomPriorityChange,
+  taskLabel,
 }: {
   verdict: JudgeVerdict;
   metrics: Record<string, CallMetrics | undefined>;
   label: (id: string) => string;
-  priority: Priority;
-  onPriorityChange: (p: Priority) => void;
+  priority: PriorityWeights;
+  onPriorityChange: (w: PriorityWeights) => void;
+  customPriority: boolean;
+  onCustomPriorityChange: (v: boolean) => void;
+  taskLabel: string;
 }) {
   const candidates = verdict.scores.flatMap((score) => {
     const m = metrics[score.model];
@@ -42,22 +42,8 @@ export function RecommendationCard({
         <h2 className="font-semibold">
           Recommended: <span className="text-primary">{label(rec.pick)}</span>
         </h2>
-        <div className="bg-background ml-auto inline-flex rounded-lg border p-0.5" role="radiogroup" aria-label="Optimise for">
-          {PRIORITIES.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              role="radio"
-              aria-checked={priority === p.value}
-              onClick={() => onPriorityChange(p.value)}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs transition-colors",
-                priority === p.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="ml-auto">
+          <PriorityPicker value={priority} onChange={onPriorityChange} custom={customPriority} onCustomChange={onCustomPriorityChange} size="sm" />
         </div>
       </div>
       <div className="px-4">
@@ -65,7 +51,7 @@ export function RecommendationCard({
           {describeRecommendation(rec, label)}
         </p>
         <p className="text-muted-foreground mt-1 text-xs">
-          Judge score {pick.score.overall}/10 · {formatUsd(pick.metrics.costUsd)} · {formatMs(pick.metrics.latencyMs)}. Based on this one prompt; run a
+          Task: {taskLabel} · Judge score {pick.score.overall}/10 · {formatUsd(pick.metrics.costUsd)} · {formatMs(pick.metrics.latencyMs)}. Based on this one prompt; run a
           batch eval on your own prompts before switching models in production.
         </p>
       </div>

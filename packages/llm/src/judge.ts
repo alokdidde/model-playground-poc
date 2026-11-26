@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { JudgeScore, JudgeVerdict } from "@fomo/shared";
+import { TASK_TYPES, type JudgeScore, type JudgeVerdict, type TaskType } from "@fomo/shared";
 import { UpstreamError } from "./errors";
 import type { CallOptions, ModelGateway } from "./gateway";
 
@@ -49,6 +49,8 @@ export interface JudgeInput {
   prompt: string;
   /** Optional reference answer (batch evals). */
   expected?: string;
+  /** Adds a task-specific focus to the rubric. */
+  taskType?: TaskType;
   candidates: Candidate[];
   judgeModel: string;
   selfJudged: boolean;
@@ -77,8 +79,15 @@ export function shuffle<T>(items: T[], random: () => number = Math.random): T[] 
   return copy;
 }
 
-export function buildJudgePrompt(prompt: string, labelled: { label: string; output: string }[], expected?: string): string {
+export function buildJudgePrompt(
+  prompt: string,
+  labelled: { label: string; output: string }[],
+  expected?: string,
+  taskType: TaskType = "general",
+): string {
+  const focus = TASK_TYPES[taskType]?.judgeFocus;
   const parts = [`## User prompt\n${prompt}`];
+  if (focus) parts.unshift(`## Task type: ${TASK_TYPES[taskType].label}\n${focus}`);
   if (expected) parts.push(`## Reference answer (may be imperfect)\n${expected}`);
   for (const { label, output } of labelled) parts.push(`### Response ${label}\n${output || "(empty response)"}`);
   return parts.join("\n\n");
@@ -115,7 +124,7 @@ export async function runJudge(gateway: ModelGateway, input: JudgeInput, options
     model: input.judgeModel,
     messages: [
       { role: "system" as const, content: JUDGE_SYSTEM_PROMPT },
-      { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.expected) },
+      { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.expected, input.taskType) },
     ],
     maxTokens: 800,
     temperature: 0,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LIMITS } from "./constants";
+import { LIMITS, TASK_TYPE_IDS } from "./constants";
 
 /**
  * Request and response contracts for the HTTP API. The server validates with
@@ -25,6 +25,18 @@ export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
  * provider's default (topP, reasoningEffort). Whether a model accepts a given
  * setting is checked on the server against the model catalog.
  */
+export const TaskTypeSchema = z.enum(TASK_TYPE_IDS);
+
+/** How the user trades quality against cost and speed. Any non-negative weights; normalised on use. */
+export const PriorityWeightsSchema = z
+  .object({
+    quality: z.number().min(0).max(1),
+    cost: z.number().min(0).max(1),
+    speed: z.number().min(0).max(1),
+  })
+  .refine((w) => w.quality + w.cost + w.speed > 0, "At least one weight must be above 0");
+export type PriorityWeights = z.infer<typeof PriorityWeightsSchema>;
+
 export const ModelSettingsSchema = z
   .object({
     temperature: z.number().min(0).max(2).optional(),
@@ -54,6 +66,10 @@ export const CompareRequestSchema = z
         model: modelId.optional(),
       })
       .default({ enabled: true }),
+    /** Tunes the judge's rubric and is stored for per-task leaderboards. */
+    taskType: TaskTypeSchema.default("general"),
+    /** The user's stated priority, stored with the comparison (the recommendation itself is computed client-side). */
+    priority: PriorityWeightsSchema.optional(),
     /** Also ask a neutral model to merge the answers into one, with attribution. */
     synthesize: z.boolean().default(true),
     /** Keyed by model id; every key must also be in `models`. */

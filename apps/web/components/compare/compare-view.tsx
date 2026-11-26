@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useReducer, useRef, useState } from "react";
-import { LIMITS, type ModelInfo } from "@fomo/shared";
+import { LIMITS, TASK_TYPES, type ModelInfo, type PriorityWeights, type TaskType } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { useModels } from "@/components/model-picker";
 import { fetchJson, ProblemError, streamCompare } from "@/lib/api-client";
 import { compareReducer, initialCompareState } from "@/lib/compare-state";
 import { newSelection, toRequestSettings, type SelectedModel } from "@/lib/model-settings";
-import type { Priority } from "@/lib/recommend";
+import { PRIORITY_WEIGHTS, TASK_DEFAULT_PRIORITY } from "@/lib/recommend";
 import { JudgePanel } from "./judge-panel";
 import { ModelCatalog } from "./model-catalog";
 import { ModelPanel, type Rating } from "./model-panel";
@@ -31,7 +31,15 @@ export function CompareView() {
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [judgeEnabled, setJudgeEnabled] = useState(true);
   const [synthesize, setSynthesize] = useState(true);
-  const [priority, setPriority] = useState<Priority>("balanced");
+  const [taskType, setTaskType] = useState<TaskType>("general");
+  const [priority, setPriority] = useState<PriorityWeights>(PRIORITY_WEIGHTS.balanced);
+  const [customPriority, setCustomPriority] = useState(false);
+
+  // Picking a task type suggests its default priority, unless the user has set custom weights.
+  function changeTaskType(t: TaskType) {
+    setTaskType(t);
+    if (!customPriority) setPriority(PRIORITY_WEIGHTS[TASK_DEFAULT_PRIORITY[t]]);
+  }
   const [state, dispatch] = useReducer(compareReducer, initialCompareState);
   const [vote, setVote] = useState<string | null>(null);
   const [ratings, setRatings] = useState<Record<string, Rating>>({});
@@ -57,6 +65,8 @@ export function CompareView() {
           models: ids,
           judge: { enabled: judgeEnabled },
           synthesize,
+          taskType,
+          priority,
           modelSettings: Object.fromEntries(selected.map((m) => [m.id, toRequestSettings(m, catalog.get(m.id))])),
         },
         (event) => dispatch({ type: "event", event }),
@@ -121,6 +131,12 @@ export function CompareView() {
             onJudgeChange={setJudgeEnabled}
             synthesize={synthesize}
             onSynthesizeChange={setSynthesize}
+            taskType={taskType}
+            onTaskTypeChange={changeTaskType}
+            priority={priority}
+            onPriorityChange={setPriority}
+            customPriority={customPriority}
+            onCustomPriorityChange={setCustomPriority}
             running={running}
             canRun={Boolean(prompt.trim()) && selected.length > 0}
             modelCount={selected.length}
@@ -142,7 +158,16 @@ export function CompareView() {
         <div ref={resultsRef} className="scroll-mt-4 space-y-4">
           <h2 className="text-xl font-semibold">Results</h2>
           {state.judge.verdict && (
-            <RecommendationCard verdict={state.judge.verdict} metrics={metrics} label={label} priority={priority} onPriorityChange={setPriority} />
+            <RecommendationCard
+              verdict={state.judge.verdict}
+              metrics={metrics}
+              label={label}
+              priority={priority}
+              onPriorityChange={setPriority}
+              customPriority={customPriority}
+              onCustomPriorityChange={setCustomPriority}
+              taskLabel={TASK_TYPES[taskType].label}
+            />
           )}
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SynthesisCard synthesis={state.synthesis} label={label} />

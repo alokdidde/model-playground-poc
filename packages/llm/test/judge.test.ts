@@ -48,3 +48,12 @@ describe("runJudge (mock provider)", () => {
     expect(["model-x", "model-y"]).toContain(verdict.winnerModel);
   });
 });
+
+describe("buildJudgePrompt task focus", () => {
+  it("adds the task-specific focus only for non-general tasks", async () => {
+    const { buildJudgePrompt } = await import("../src/judge");
+    const labelled = [{ label: "A", output: "42" }];
+    expect(buildJudgePrompt("q", labelled)).not.toContain("Task type");
+    expect(buildJudgePrompt("q", labelled, undefined, "reasoning")).toMatch(/^## Task type: Reasoning & math\n.*final answer/);
+  });
+});

@@ -37,6 +37,10 @@ model Comparison {
   models         String[]
   maxTokens      Int
   temperature    Float
+  /// general | coding | reasoning | writing | summarization | extraction | chat
+  taskType       String          @default("general")
+  /// The user's stated {quality, cost, speed} weights, if any
+  priority       Json?
   status         RunStatus       @default(RUNNING)
   /// Optional client-supplied key; a retried POST with the same key is rejected with 409.
   idempotencyKey String?         @unique
