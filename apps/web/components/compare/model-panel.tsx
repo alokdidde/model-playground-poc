@@ -6,6 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import type { ModelPanel as Panel } from "@/lib/compare-state";
 import { cn, formatMs, formatUsd } from "@/lib/utils";
 import { Markdown } from "@/components/markdown";
+import { formatTps } from "@/lib/metrics";
 
 const STATUS_BADGE: Record<Panel["status"], { label: string; variant: "secondary" | "outline" | "success" | "destructive" | "warning" }> = {
   pending: { label: "Queued", variant: "outline" },
@@ -82,6 +83,11 @@ export function ModelPanel({
           <>
             <span title="Time to first token">TTFT {formatMs(panel.metrics.ttftMs)}</span>
             <span>Total {formatMs(panel.metrics.latencyMs)}</span>
+            {panel.metrics.outputTokensPerSec !== undefined && (
+              <span title={panel.metrics.reasoned ? "Includes hidden reasoning tokens" : "Output tokens per second"}>
+                {formatTps(panel.metrics.outputTokensPerSec)}
+              </span>
+            )}
             <span title={panel.metrics.tokensEstimated ? "Estimated: provider did not report usage" : undefined}>
               {panel.metrics.inputTokens}→{panel.metrics.outputTokens} tok{panel.metrics.tokensEstimated ? "*" : ""}
             </span>

@@ -192,8 +192,16 @@ export interface ModelInfo {
 
 export interface CallMetrics {
   latencyMs: number;
-  /** Time to first token (streaming only). */
+  /** Time to first visible answer token (streaming only). */
   ttftMs?: number;
+  /**
+   * Generation speed: output tokens / time from the first streamed chunk
+   * (answer or reasoning) to the end. Streaming only. For reasoning models
+   * the output tokens include the hidden reasoning, which is billed too.
+   */
+  outputTokensPerSec?: number;
+  /** The model streamed reasoning before answering. */
+  reasoned?: boolean;
   inputTokens: number;
   outputTokens: number;
   /** True when the provider did not report usage and we estimated it. */

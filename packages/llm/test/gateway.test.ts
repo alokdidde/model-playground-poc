@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ModelGateway } from "../src/gateway";
+import { ModelGateway, tokensPerSecond } from "../src/gateway";
 import { StreamInterruptedError, UpstreamError } from "../src/errors";
 import { ScriptedProvider, limiter, request } from "./helpers";
 
@@ -120,5 +120,27 @@ describe("ModelGateway", () => {
     await new ModelGateway(new ScriptedProvider([withLimits]), rl).stream(request, () => {}, { lane: "batch" });
     expect(observe).toHaveBeenCalledWith("m", { requestsPerWindow: 120, tokensPerWindow: 1_000_000 });
     expect(acquire.mock.calls[0]![2]).toMatchObject({ lane: "batch" });
+  });
+
+  it("measures decode speed from the first chunk, and flags reasoning", async () => {
+    async function* slowThinker() {
+      yield { type: "thinking" as const };
+      await new Promise((r) => setTimeout(r, 150));
+      yield { type: "delta" as const, text: "answer" };
+      yield { type: "usage" as const, usage: { inputTokens: 3, outputTokens: 30 } };
+    }
+    const result = await new ModelGateway(new ScriptedProvider([slowThinker]), limiter()).stream(request, () => {});
+    expect(result.metrics.reasoned).toBe(true);
+    expect(result.metrics.outputTokensPerSec).toBeGreaterThan(100);
+    expect(result.metrics.outputTokensPerSec).toBeLessThan(220);
+    expect(tokensPerSecond(100, 1_000, 3_000)).toBe(50);
+    expect(tokensPerSecond(100, undefined, 3_000)).toBeUndefined(); // not streamed
+  });
+
+  it("can restart a stream that failed part-way, for batch work nobody is watching", async () => {
+    const provider = new ScriptedProvider([failsMidStream, ok]);
+    const result = await new ModelGateway(provider, limiter()).stream(request, () => {}, { restartInterruptedStreams: true });
+    expect(result.output).toBe("hello world ");
+    expect(provider.calls).toBe(2);
   });
 });

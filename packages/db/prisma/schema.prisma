@@ -72,6 +72,10 @@ model CompareResult {
   problem         Json?
   latencyMs       Int
   ttftMs          Int?
+  /// Output tokens/sec from the first streamed chunk (includes reasoning tokens)
+  outputTokensPerSec Float?
+  /// The model streamed reasoning before answering
+  reasoned        Boolean?
   inputTokens     Int
   outputTokens    Int
   tokensEstimated Boolean
@@ -164,6 +168,9 @@ model EvalResult {
   output          String
   problem         Json?
   latencyMs       Int
+  ttftMs          Int?
+  outputTokensPerSec Float?
+  reasoned        Boolean?
   inputTokens     Int
   outputTokens    Int
   tokensEstimated Boolean
@@ -171,6 +178,10 @@ model EvalResult {
   attempts        Int
   /// Judge's overall score (1-10), filled in after the judge step.
   score           Float?
+  /// Judge's per-criterion scores: { accuracy, helpfulness, clarity }
+  criteria        Json?
+  /// Automatic checks against the prompt's expectations: [{ name, passed, detail }]
+  checks          Json?
   isWinner        Boolean    @default(false)
   /// The settings actually sent to this model
   settings        Json?

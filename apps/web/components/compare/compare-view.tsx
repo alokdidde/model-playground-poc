@@ -9,6 +9,7 @@ import { compareReducer, initialCompareState } from "@/lib/compare-state";
 import { newSelection, toRequestSettings, type SelectedModel } from "@/lib/model-settings";
 import { PRIORITY_WEIGHTS, TASK_DEFAULT_PRIORITY } from "@/lib/recommend";
 import { JudgePanel } from "./judge-panel";
+import { MetricsTable } from "./metrics-table";
 import { ModelCatalog } from "./model-catalog";
 import { ModelPanel, type Rating } from "./model-panel";
 import { ModelSettingsDrawer } from "./model-settings-drawer";
@@ -194,6 +195,11 @@ export function CompareView() {
               onValidate={finished && state.comparisonId ? () => setValidateOpen(true) : undefined}
             />
           )}
+          <MetricsTable
+            rows={state.order.flatMap((model) => (metrics[model] ? [{ model, metrics: metrics[model]! }] : []))}
+            catalog={catalog}
+            label={label}
+          />
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SynthesisCard synthesis={state.synthesis} label={label} />
             <JudgePanel judge={state.judge} label={label} />

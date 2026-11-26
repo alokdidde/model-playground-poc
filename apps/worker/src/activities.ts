@@ -70,14 +70,19 @@ export async function callModel(runId: string, promptIndex: number, model: strin
   const settings = settingsRecord(request);
 
   try {
-    const { output, metrics } = await gateway.complete(
-      request,
-      // Batch work is patient: wait longer for capacity and retry more than the interactive path.
+    // Streamed (to nobody) so batch results get the same TTFT and tokens/sec as compare.
+    const { output, metrics } = await gateway.stream(request, () => {}, {
       // Batch lane: it only fills its share of each model's capacity, so a person running a compare never waits behind an eval.
-      { lane: "batch", maxQueueWaitMs: 5 * 60_000, attemptTimeoutMs: 120_000, maxAttempts: 5 },
-    );
-    const { ttftMs: _notStreamed, ...measured } = metrics;
-    const row = { status: "SUCCEEDED" as const, output, settings, ...measured };
+      lane: "batch",
+      // Batch work is patient: wait longer for capacity and retry more than the interactive path.
+      maxQueueWaitMs: 5 * 60_000,
+      attemptTimeoutMs: 120_000,
+      firstTokenTimeoutMs: 60_000,
+      maxAttempts: 5,
+      // Nobody has seen the text, so a stream that breaks part-way can simply start over.
+      restartInterruptedStreams: true,
+    });
+    const row = { status: "SUCCEEDED" as const, output, settings, ...metrics };
     await prisma.evalResult.upsert({ where: key, create: { runId, promptIndex, model, ...row }, update: row });
     return { model, ok: true, output };
   } catch (error) {

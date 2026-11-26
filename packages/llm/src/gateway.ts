@@ -25,6 +25,12 @@ export interface CallOptions {
   maxQueueWaitMs?: number;
   /** "interactive" (a person is watching; default) or "batch" (yields capacity to interactive). */
   lane?: Lane;
+  /**
+   * Streaming only: retry a stream that failed part-way, discarding its text.
+   * Safe when nobody has seen the text yet (the batch worker); the compare
+   * view leaves this off, since retrying would duplicate text on screen.
+   */
+  restartInterruptedStreams?: boolean;
   onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
   onWait?: (info: { waitMs: number; reason: string }) => void;
 }
@@ -67,7 +73,7 @@ export class ModelGateway {
     return this.run(request, options, async (signal) => {
       const result = await this.provider.complete(request, signal);
       if (result.rateLimits) this.observe(request.model, result.rateLimits);
-      return { text: result.text, usage: result.usage, ttftMs: undefined };
+      return { text: result.text, usage: result.usage };
     });
   }
 
@@ -88,6 +94,8 @@ export class ModelGateway {
       let text = "";
       let usage: Usage | undefined;
       let ttftMs: number | undefined;
+      let firstChunkAt: number | undefined;
+      let reasoned = false;
       let finishReason: string | undefined;
       try {
         for await (const chunk of this.provider.stream(request, combined)) {
@@ -103,9 +111,11 @@ export class ModelGateway {
             finishReason = chunk.reason;
             continue;
           }
+          firstChunkAt ??= Date.now();
           if (chunk.type === "thinking") {
             // The model is reasoning: it is alive, so stop the first-token timer,
             // but TTFT still measures the first visible answer token.
+            reasoned = true;
             clearTimeout(timer);
             continue;
           }
@@ -122,7 +132,7 @@ export class ModelGateway {
         if (firstToken.signal.aborted) upstream = firstToken.signal.reason;
         else if (signal.aborted && isTimeout(signal.reason)) upstream = new UpstreamError("timeout", "Model call timed out");
         // Text already reached the user: retrying would duplicate it.
-        if (sentSoFar.length > 0 && upstream instanceof UpstreamError) {
+        if (sentSoFar.length > 0 && upstream instanceof UpstreamError && !options.restartInterruptedStreams) {
           throw new StreamInterruptedError(upstream, sentSoFar);
         }
         throw upstream;
@@ -138,14 +148,14 @@ export class ModelGateway {
           `Used all ${request.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
         );
       }
-      return { text, usage, ttftMs };
+      return { text, usage, ttftMs, firstChunkAt, reasoned };
     });
   }
 
   private async run(
     request: ChatRequest,
     options: CallOptions,
-    attemptFn: (signal: AbortSignal, startedAt: number) => Promise<{ text: string; usage?: Usage; ttftMs?: number }>,
+    attemptFn: (signal: AbortSignal, startedAt: number) => Promise<AttemptResult>,
   ): Promise<CallResult> {
     const maxAttempts = options.maxAttempts ?? DEFAULTS.maxAttempts;
     const attemptTimeoutMs = options.attemptTimeoutMs ?? DEFAULTS.attemptTimeoutMs;
@@ -162,7 +172,8 @@ export class ModelGateway {
       const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
       try {
-        const { text, usage, ttftMs } = await attemptFn(signal, attemptStartedAt);
+        const { text, usage, ttftMs, firstChunkAt, reasoned } = await attemptFn(signal, attemptStartedAt);
+        const finishedAt = Date.now();
         const inputTokens = usage?.inputTokens ?? estimateInputTokens(request);
         const outputTokens = usage?.outputTokens ?? estimateTokens(text);
         await this.releaseQuietly(lease, inputTokens + outputTokens);
@@ -171,8 +182,10 @@ export class ModelGateway {
           metrics: {
             // Latency of the successful attempt: a fair measure of the model itself,
             // not of our queueing or retries (those show up in `attempts`).
-            latencyMs: Date.now() - attemptStartedAt,
+            latencyMs: finishedAt - attemptStartedAt,
             ttftMs,
+            outputTokensPerSec: tokensPerSecond(outputTokens, firstChunkAt, finishedAt),
+            ...(reasoned ? { reasoned } : {}),
             inputTokens,
             outputTokens,
             tokensEstimated: usage === undefined,
@@ -215,6 +228,27 @@ export class ModelGateway {
       console.warn("[gateway] failed to release lease; it will expire on its own", error);
     }
   }
+}
+
+interface AttemptResult {
+  text: string;
+  usage?: Usage;
+  ttftMs?: number;
+  /** When the first chunk of any kind arrived (streaming only). */
+  firstChunkAt?: number;
+  reasoned?: boolean;
+}
+
+/**
+ * Decode speed, measured from the first streamed chunk so it excludes queueing
+ * and time to first token. Undefined for non-streaming calls and for windows
+ * too short to measure (a one-chunk answer).
+ */
+export function tokensPerSecond(outputTokens: number, firstChunkAt: number | undefined, finishedAt: number): number | undefined {
+  if (firstChunkAt === undefined || outputTokens <= 1) return undefined;
+  const ms = finishedAt - firstChunkAt;
+  if (ms < 100) return undefined;
+  return Math.round((outputTokens / (ms / 1000)) * 10) / 10;
 }
 
 function isTimeout(reason: unknown): boolean {
