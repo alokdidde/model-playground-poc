@@ -9,8 +9,8 @@ import type { ModelCapabilities, ModelInfo, ModelKind } from "@fomo/shared";
  * docs.digitalocean.com/products/inference/details/pricing (checked 2026-11-26).
  *
  * Capabilities and availability were probed on 2026-11-26 by calling every
- * chat model with temperature, top_p and reasoning_effort (see
- * docs/model-capabilities.md). Unknown models default to "accepts everything"
+ * chat model with temperature, top_p and reasoning_effort (results in
+ * docs/ARCHITECTURE.md, "Per-model settings and capabilities"). Unknown models default to "accepts everything"
  * and the provider's error is shown if that turns out wrong.
  */
 interface Entry {
