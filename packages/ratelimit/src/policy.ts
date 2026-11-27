@@ -1,8 +1,7 @@
 import type { Lane, Limits, ObservedLimits } from "./types";
 
 /**
- * The bucket policy, shared by every store (the Valkey store runs the same
- * arithmetic inside its Lua script; keep the two in step).
+ * The bucket policy, shared by every store.
  *
  *   base      = learned limit × LEARNED_SAFETY, or the configured fallback
  *   effective = base × aimdFactor × (batch ? batchShare : 1)
@@ -48,9 +47,9 @@ export const decreased = (factor: number) => Math.max(AIMD_MIN, factor / 2);
 export const increased = (factor: number) => Math.min(1, factor + AIMD_STEP);
 
 /**
- * Per-process bucket state for the memory and Postgres stores. (The Valkey
- * store keeps it in Valkey, shared by every instance; for the Postgres
- * fallback each instance learns on its own, which is good enough.)
+ * Per-process bucket state (learned limits, AIMD factor). The leases and
+ * cooldowns themselves are shared through the store; each instance learns
+ * limits on its own, which is good enough at PoC scale (2 processes).
  */
 export class LocalBucketState {
   private states = new Map<string, BucketState & { learnedAt?: number }>();

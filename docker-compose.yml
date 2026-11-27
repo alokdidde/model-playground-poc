@@ -1,6 +1,5 @@
 # Local infrastructure. The apps run on the host with `pnpm dev`.
-#   docker compose up -d                      # Postgres only (default lease store)
-#   docker compose --profile redis up -d      # + Valkey, for LEASE_STORE=redis
+#   docker compose up -d                      # Postgres (app data, DBOS, leases)
 services:
   postgres:
     image: postgres:16
@@ -17,13 +16,6 @@ services:
       test: ["CMD-SHELL", "pg_isready -U fomo"]
       interval: 2s
       retries: 20
-
-  # Same engine as DigitalOcean Managed Caching (Valkey, Redis-compatible).
-  valkey:
-    image: valkey/valkey:8
-    profiles: ["redis"]
-    ports:
-      - "6379:6379"
 
 volumes:
   pgdata:

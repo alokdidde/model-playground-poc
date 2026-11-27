@@ -1,35 +1,25 @@
 # DigitalOcean App Platform spec.
 #   doctl apps create --spec .do/app.yaml      (first deploy)
 #   doctl apps update <app-id> --spec .do/app.yaml
-# Replace the github.repo/branch and set DO_MODEL_ACCESS_KEY as a secret in the console.
+#
+# This is the spec the live PoC runs: 1 web + 1 worker, deployed from main, and an
+# existing Managed Postgres cluster (model-fomo-pg, db-s-1vcpu-1gb) wired in by
+# secret URLs. (The account's database limit refused a spec-managed cluster; to let
+# App Platform create one instead, add a `databases:` block and use ${db.DATABASE_URL}.)
+# Set the four SECRET values in the app's settings, not in this file.
 name: model-fomo
 region: nyc
 
-databases:
-  # Managed Postgres: app data (Prisma), DBOS checkpoints (schema "dbos") and rate-limit leases.
-  - name: db
-    engine: PG
-    version: "16"
-    production: true
-    cluster_name: model-fomo-pg
-    db_name: fomo
-    db_user: fomo
-  # Optional: DO Managed Caching (Valkey) for LEASE_STORE=redis. Uncomment and
-  # set LEASE_STORE=redis + REDIS_URL below to use it.
-  # - name: cache
-  #   engine: VALKEY
-  #   production: true
-  #   cluster_name: model-fomo-cache
-
 # Shared by every component.
 envs:
+  # Managed Postgres: app data (Prisma), DBOS checkpoints and rate-limit leases.
   - key: DATABASE_URL
     scope: RUN_TIME
-    value: ${db.DATABASE_URL}
+    type: SECRET
   # Same database as the app; DBOS keeps its tables in its own "dbos" schema.
   - key: DBOS_SYSTEM_DATABASE_URL
     scope: RUN_TIME
-    value: ${db.DATABASE_URL}
+    type: SECRET
   # DO Managed Postgres CA (PEM, from `doctl databases get-ca <cluster-id>`).
   # DBOS uses node-postgres, which verifies TLS certificates; see packages/db/src/dbos-url.ts.
   - key: DATABASE_CA_CERT
@@ -50,10 +40,10 @@ envs:
   - key: JUDGE_FALLBACK_MODELS
     scope: RUN_TIME
     value: deepseek-v4.1-flash,glm-5.3-flash
-  # Valkey (DO Managed Caching) when REDIS_URL is set; Postgres otherwise.
-  - key: REDIS_URL
+  # Leases live in Postgres (the only shared store this PoC needs).
+  - key: LEASE_STORE
     scope: RUN_TIME
-    type: SECRET
+    value: postgres
   # Fallback limits per model until the response headers teach the real ones (120 RPM per model on DO).
   - key: RATE_LIMIT_RPM
     scope: RUN_TIME
@@ -79,7 +69,7 @@ services:
     dockerfile_path: Dockerfile
     http_port: 3000
     instance_size_slug: apps-s-1vcpu-1gb
-    instance_count: 2
+    instance_count: 1
     envs:
       - key: COMPONENT
         scope: BUILD_TIME
@@ -113,6 +103,7 @@ jobs:
     github:
       repo: alokdidde/model-playground-poc
       branch: main
+      deploy_on_push: true
     source_dir: /
     dockerfile_path: Dockerfile
     run_command: pnpm --filter @fomo/db migrate:deploy

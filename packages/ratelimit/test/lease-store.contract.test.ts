@@ -2,12 +2,11 @@ import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it } from "vitest";
 import { MemoryLeaseStore } from "../src/memory-store";
 import { PostgresLeaseStore } from "../src/postgres-store";
-import { RedisLeaseStore } from "../src/redis-store";
 import type { LeaseStore, Limits } from "../src/types";
 
 /**
- * One behavioural contract, run against every store. Postgres and Redis run
- * only when TEST_DATABASE_URL / TEST_REDIS_URL are set (CI and local docker).
+ * One behavioural contract, run against every store. Postgres runs only when
+ * TEST_DATABASE_URL is set (CI and local docker).
  */
 const limits: Limits = {
   requestsPerWindow: 5,
@@ -33,16 +32,6 @@ if (process.env.TEST_DATABASE_URL) {
       const prisma = new PrismaClient();
       cleanups.push(() => prisma.$disconnect());
       return new PostgresLeaseStore(prisma);
-    },
-  });
-}
-if (process.env.TEST_REDIS_URL) {
-  stores.push({
-    name: "redis",
-    make: async () => {
-      const store = new RedisLeaseStore(process.env.TEST_REDIS_URL!);
-      cleanups.push(() => store.close());
-      return store;
     },
   });
 }

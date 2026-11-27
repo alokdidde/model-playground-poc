@@ -11,8 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fomo/db": "workspace:*",
-    "ioredis": "^5.11.1"
+    "@fomo/db": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.12"

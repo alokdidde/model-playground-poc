@@ -17,14 +17,10 @@ jobs:
           POSTGRES_DB: fomo
         ports: ["5432:5432"]
         options: --health-cmd "pg_isready -U fomo" --health-interval 2s --health-retries 20
-      valkey:
-        image: valkey/valkey:8
-        ports: ["6379:6379"]
     env:
       DATABASE_URL: postgresql://fomo:fomo@localhost:5432/fomo
-      # Runs the lease-store contract tests against real Postgres and Valkey too.
+      # Runs the lease-store contract tests against real Postgres too.
       TEST_DATABASE_URL: postgresql://fomo:fomo@localhost:5432/fomo
-      TEST_REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { clamp, DEFAULT_SETTINGS, type SelectedModel } from "@/lib/model-settings";
 import { cn } from "@/lib/utils";
@@ -112,11 +111,6 @@ export function ModelSettingsDrawer({
             />
           </Field>
 
-          <Field label="Tools" hint="Tool calling (web search, code execution) is on the roadmap; no model has it in this PoC yet." unsupported unsupportedText="Coming later (roadmap)">
-            <label className="text-muted-foreground flex items-center gap-2 text-sm">
-              <Switch checked={false} disabled /> Enable tools
-            </label>
-          </Field>
         </div>
 
         <DrawerFooter className="justify-between border-t">

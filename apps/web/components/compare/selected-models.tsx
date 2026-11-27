@@ -107,7 +107,6 @@ export function SelectedModels({
                 <th className="px-1 py-2 font-medium" title="Nucleus sampling">Top P</th>
                 <th className="px-1 py-2 font-medium" title="Includes hidden reasoning tokens on reasoning models">Max tokens</th>
                 <th className="px-1 py-2 font-medium">Reasoning</th>
-                <th className="px-1 py-2 font-medium">Tools</th>
                 <th className="sr-only">Actions</th>
               </tr>
             </thead>
@@ -165,9 +164,6 @@ export function SelectedModels({
                       ) : (
                         <span className="text-muted-foreground text-xs" title={UNSUPPORTED}>—</span>
                       )}
-                    </td>
-                    <td className="px-1 py-2">
-                      <span className="text-muted-foreground text-xs" title="Tool calling isn't wired up in this PoC yet (roadmap)">—</span>
                     </td>
                     <td className="px-1 py-2">
                       <div className="flex justify-end">

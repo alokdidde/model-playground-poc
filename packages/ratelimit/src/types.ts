@@ -68,7 +68,7 @@ export type AcquireResult =
  * operation, otherwise two callers can both see room for one more.
  */
 export interface LeaseStore {
-  readonly kind: "memory" | "postgres" | "redis";
+  readonly kind: "memory" | "postgres";
   /**
    * Takes capacity if there is room under the bucket's *effective* limits:
    * learned limits (or the configured ones), scaled by the AIMD factor, and

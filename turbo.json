@@ -31,8 +31,7 @@
         "^generate"
       ],
       "env": [
-        "TEST_DATABASE_URL",
-        "TEST_REDIS_URL"
+        "TEST_DATABASE_URL"
       ]
     },
     "lint": {},
