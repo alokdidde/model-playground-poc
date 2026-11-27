@@ -1,5 +1,6 @@
 import type { Candidate } from "./judge";
 import { describeModel } from "./catalog";
+import { fence, FENCE_RULE } from "./fence";
 import type { ChatRequest } from "./types";
 
 /**
@@ -15,17 +16,19 @@ Rules:
 - Where answers disagree, say so briefly and prefer the better-supported claim.
 - After each sentence or bullet that comes mainly from one answer, cite it in square brackets with the model name exactly as given, e.g. [GLM-5.3 Flash]. Cite several if they agree, e.g. [GLM-5.3 Flash, Ministral 3 14B].
 - Do not add facts that none of the answers contain.
-- Be no longer than the longest answer. Use Markdown only if the answers do.`;
+- Be no longer than the longest answer. Use Markdown only if the answers do.
+- Do not include images.
+- ${FENCE_RULE}`;
 
 export function buildSynthesisRequest(prompt: string, candidates: Candidate[], synthModel: string): ChatRequest {
   const body = candidates
-    .map((c) => `### ${describeModel(c.model).label}\n${c.output}`)
+    .map((c) => `### ${describeModel(c.model).label}\n${fence("answer", c.output, { model: describeModel(c.model).label })}`)
     .join("\n\n");
   return {
     model: synthModel,
     messages: [
       { role: "system", content: SYNTHESIS_SYSTEM_PROMPT },
-      { role: "user", content: `## User prompt\n${prompt}\n\n## Answers\n${body}\n\nWrite the merged answer now.` },
+      { role: "user", content: `## User prompt\n${fence("user_prompt", prompt)}\n\n## Answers\n${body}\n\nWrite the merged answer now.` },
     ],
     maxTokens: 1500,
     temperature: 0.2,

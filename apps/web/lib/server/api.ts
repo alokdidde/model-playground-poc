@@ -91,18 +91,28 @@ export function toFieldErrors(error: z.ZodError, location: string): FieldError[]
 }
 
 async function readJson(req: NextRequest): Promise<unknown> {
-  const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) throw errors.unsupportedMediaType();
+  if (!isJsonContentType(req.headers.get("content-type"))) throw errors.unsupportedMediaType();
   const length = Number(req.headers.get("content-length") ?? 0);
   if (length > MAX_BODY_BYTES) throw errors.payloadTooLarge(MAX_BODY_BYTES);
 
   const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) throw errors.payloadTooLarge(MAX_BODY_BYTES);
+  if (Buffer.byteLength(text) > MAX_BODY_BYTES) throw errors.payloadTooLarge(MAX_BODY_BYTES);
   try {
     return JSON.parse(text);
   } catch {
     throw errors.badRequest("The body is not valid JSON.");
   }
+}
+
+/**
+ * True only when the media type itself is application/json (parameters such as
+ * charset are fine). A substring check would accept "text/plain; application/json",
+ * which browsers treat as text/plain: a "simple" request that skips the CORS
+ * preflight, so another site could make a visitor's browser start a paid compare.
+ */
+export function isJsonContentType(value: string | null): boolean {
+  const essence = value?.split(";")[0]?.trim().toLowerCase();
+  return essence === "application/json";
 }
 
 function toApiError(error: unknown, requestId: string): ApiError {

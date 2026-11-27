@@ -19,6 +19,7 @@ export const PROBLEM_TYPES = {
   upstreamTimeout: "/problems/upstream-timeout",
   upstreamError: "/problems/upstream-error",
   unauthorized: "/problems/unauthorized",
+  forbidden: "/problems/forbidden",
   internal: "/problems/internal-error",
   unavailable: "/problems/service-unavailable",
 } as const;

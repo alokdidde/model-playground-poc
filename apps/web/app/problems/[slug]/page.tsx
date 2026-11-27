@@ -14,6 +14,7 @@ const DOCS: Record<string, { title: string; body: string }> = {
   "upstream-timeout": { title: "Model timed out", body: "The model did not respond (or did not produce a first token) in time, even after retries." },
   "upstream-error": { title: "Model call failed", body: "The model provider returned an error. `upstreamStatus` has the provider's status code when known." },
   unauthorized: { title: "Unauthorized", body: "Authentication failed. (Auth is not enabled in the PoC.)" },
+  forbidden: { title: "Forbidden", body: "The request came from another website. Data-changing API calls are only accepted from this app's own pages." },
   "internal-error": { title: "Internal error", body: "An unexpected server error. Quote the `requestId` when reporting it." },
   "service-unavailable": { title: "Service unavailable", body: "A dependency (database or queue) is unavailable. Retry after the Retry-After header." },
 };
