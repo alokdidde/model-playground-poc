@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calculator, ChevronRight, Coins, Timer } from "lucide-react";
+import { Calculator, ChevronRight, CircleDollarSign, Timer } from "lucide-react";
 import type { CallMetrics, JudgeScore, ModelInfo } from "@fomo/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -269,7 +269,7 @@ export function SpeedCard({
             </TableBody>
           </Table>
           <p className="text-muted-foreground mt-2 text-xs">
-            <Coins className="mr-1 inline size-3.5 align-[-2px]" />
+            <CircleDollarSign className="mr-1 inline size-3.5 align-[-2px]" />
             Green is best in the column. * includes hidden reasoning tokens, which are billed as output.
           </p>
         </div>

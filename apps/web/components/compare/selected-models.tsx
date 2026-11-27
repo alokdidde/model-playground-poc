@@ -88,10 +88,10 @@ export function SelectedModels({
                   <div className="truncate text-sm font-medium">{info?.label ?? m.id}</div>
                   <div className="text-muted-foreground truncate text-xs">{summary.join(" · ")}</div>
                 </button>
-                <Button variant="ghost" size="icon" aria-label={`Settings for ${info?.label ?? m.id}`} onClick={() => onOpenSettings(m.id)}>
+                <Button variant="ghost" size="icon" aria-label={`Settings for ${info?.label ?? m.id}`} tooltip="Model settings" onClick={() => onOpenSettings(m.id)}>
                   <Settings />
                 </Button>
-                <Button variant="ghost" size="icon" aria-label={`Remove ${info?.label ?? m.id}`} onClick={() => onChange(selected.filter((x) => x.id !== m.id))}>
+                <Button variant="ghost" size="icon" aria-label={`Remove ${info?.label ?? m.id}`} tooltip="Remove from this compare" onClick={() => onChange(selected.filter((x) => x.id !== m.id))}>
                   <X />
                 </Button>
               </li>
@@ -167,10 +167,10 @@ export function SelectedModels({
                     </td>
                     <td className="px-1 py-2">
                       <div className="flex justify-end">
-                        <Button variant="ghost" size="icon" aria-label={`Settings for ${info?.label ?? m.id}`} onClick={() => onOpenSettings(m.id)}>
+                        <Button variant="ghost" size="icon" aria-label={`Settings for ${info?.label ?? m.id}`} tooltip="Model settings" onClick={() => onOpenSettings(m.id)}>
                           <Settings />
                         </Button>
-                        <Button variant="ghost" size="icon" aria-label={`Remove ${info?.label ?? m.id}`} onClick={() => onChange(selected.filter((x) => x.id !== m.id))}>
+                        <Button variant="ghost" size="icon" aria-label={`Remove ${info?.label ?? m.id}`} tooltip="Remove from this compare" onClick={() => onChange(selected.filter((x) => x.id !== m.id))}>
                           <X />
                         </Button>
                       </div>

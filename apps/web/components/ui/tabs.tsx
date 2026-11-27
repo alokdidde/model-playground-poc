@@ -23,7 +23,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 data-[state=active]:bg-background data-[state=active]:text-foreground relative inline-flex h-full shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium sm:px-3 whitespace-nowrap transition-colors focus-visible:ring-[3px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
+        "text-muted-foreground hover:text-foreground hover:bg-background/50 cursor-pointer active:scale-[0.97] focus-visible:ring-ring/50 data-[state=active]:bg-background data-[state=active]:text-foreground relative inline-flex h-full shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium sm:px-3 whitespace-nowrap transition-all duration-150 focus-visible:ring-[3px] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
