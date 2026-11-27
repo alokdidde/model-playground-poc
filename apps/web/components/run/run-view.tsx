@@ -207,7 +207,7 @@ export function RunView({ id }: { id: string }) {
             </Button>
           )}
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/compare?from=${encodeURIComponent(id)}`}>
+            <Link href={`/?from=${encodeURIComponent(id)}`}>
               <Pencil /> Edit and rerun
             </Link>
           </Button>
@@ -283,7 +283,7 @@ export function RunView({ id }: { id: string }) {
 
 function BackLink() {
   return (
-    <Link href="/compare" className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm">
+    <Link href="/" className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm">
       <ArrowLeft className="size-4" /> New compare
     </Link>
   );

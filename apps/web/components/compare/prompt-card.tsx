@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, FolderOpen, Play, Square } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, FolderOpen, Loader2, Play, Square } from "lucide-react";
 import { LIMITS, type PriorityWeights } from "@fomo/shared";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -46,6 +46,7 @@ export function PromptCard({
   customPriority,
   onCustomPriorityChange,
   running,
+  starting = false,
   canRun,
   modelCount,
   onRun,
@@ -64,6 +65,8 @@ export function PromptCard({
   customPriority: boolean;
   onCustomPriorityChange: (v: boolean) => void;
   running: boolean;
+  /** The run was requested and its page is about to open: show it on the button at once. */
+  starting?: boolean;
   canRun: boolean;
   modelCount: number;
   onRun: () => void;
@@ -152,6 +155,10 @@ export function PromptCard({
             {running ? (
               <Button variant="outline" onClick={onStop}>
                 <Square /> Stop
+              </Button>
+            ) : starting ? (
+              <Button disabled aria-busy="true">
+                <Loader2 className="animate-spin" /> Starting…
               </Button>
             ) : (
               <Button onClick={onRun} disabled={!canRun}>

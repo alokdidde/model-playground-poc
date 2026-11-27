@@ -6,19 +6,29 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { fetchJson } from "@/lib/api-client";
 
+type ModelsResponse = { items: ModelInfo[]; mockMode: boolean };
+/** Fetched once per tab: the Compare page and the run page it opens share it instead of loading it twice. */
+let modelsRequest: Promise<ModelsResponse> | undefined;
+let modelsLoaded: ModelsResponse | undefined;
+const NO_MODELS: ModelInfo[] = [];
+
 export function useModels() {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [mockMode, setMockMode] = useState(false);
+  const [data, setData] = useState<ModelsResponse | undefined>(modelsLoaded);
   const [error, setError] = useState<string>();
   useEffect(() => {
-    fetchJson<{ items: ModelInfo[]; mockMode: boolean }>("/api/models")
+    if (modelsLoaded) return;
+    modelsRequest ??= fetchJson<ModelsResponse>("/api/models");
+    modelsRequest
       .then((r) => {
-        setModels(r.items);
-        setMockMode(r.mockMode);
+        modelsLoaded = r;
+        setData(r);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        modelsRequest = undefined; // let the next page try again
+        setError(e.message);
+      });
   }, []);
-  return { models, mockMode, error };
+  return { models: data?.items ?? NO_MODELS, mockMode: data?.mockMode ?? false, error };
 }
 
 export function ModelPicker({
