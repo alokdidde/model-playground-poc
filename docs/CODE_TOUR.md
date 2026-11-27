@@ -72,7 +72,7 @@ A bucket is per (hashed key, model). A lease reserves 1 request plus estimated t
 
 `Comparison` → `CompareResult`, `Judgement`, `Vote`. `rate_lease` and `rate_cooldown` back the lease store, and `rate_event` records its decisions.
 
-- **Expect:** "Where's the leaderboard?" Built and cut: averaging judge scores across unrelated prompts mixes different expectations, so it misleads. The per-run combined view is the comparison; a per-dataset leaderboard comes with batch evals.
+- **Expect:** "Why no ranking across runs?" Averaging judge scores across unrelated prompts mixes different expectations, so it misleads. The per-run combined view is the comparison; a per-dataset leaderboard comes with batch evals on the roadmap.
 
 ## 12. Deploy: `Dockerfile`, `.do/app.yaml`
 

@@ -12,7 +12,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Model FOMO",
+  title: "Model Playground",
   description: "Send one prompt to many models and see which answer is best.",
 };
 

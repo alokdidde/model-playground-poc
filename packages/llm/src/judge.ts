@@ -17,8 +17,8 @@ import type { CallOptions, ModelGateway } from "./gateway";
  *    one of the contestants whenever possible.
  *  - Verbosity bias: the rubric tells the judge not to reward length, and
  *    the UI shows each answer's length next to its score (Dubois et al. 2024).
- *  - No ground truth: a reference answer and automatic check results, when
- *    there are any, are given to the judge (reference-guided judging).
+ *  - Format: if the prompt asks for a specific format (JSON only, a word
+ *    limit), the rubric tells the judge to weigh following it exactly.
  * The judge is still a model, not ground truth. The UI says so, and human
  * votes are collected alongside it.
  */

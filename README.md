@@ -1,23 +1,35 @@
-# Model FOMO
+# Model Playground
 
-Send one prompt to several LLMs on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**: an independent judge scores the anonymised answers, a synthesizer merges them into one answer that cites each model, and a recommendation weighs quality against cost and latency ("X scores 1 point below the best at 1/10th of the cost"). Every comparison is saved with its own page. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline. Batch evals over many prompts are on the [roadmap](docs/ROADMAP.md).
+Many DigitalOcean customers have **model FOMO**: they worry they picked the wrong model for their prompts. Model Playground lets them send one prompt to several models on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**:
 
-**Live PoC:** https://model-fomo-qlrb3.ondigitalocean.app
+- an independent **judge** scores the anonymised answers, in both orders, so position bias can't pick the winner;
+- a **synthesizer** merges the answers into one, citing which model each part came from;
+- a **recommendation** weighs quality against cost and speed ("X scores 1 point below the best at 1/10th of the cost").
 
-**Start here:**
+Every compare is saved with its own shareable page at `/runs/<id>`, and keeps running if the tab is closed. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline.
 
-- [docs/DECISIONS.md](docs/DECISIONS.md): one page on what I built, what I skipped and why, the key tradeoffs, and feedback for DigitalOcean.
-- [docs/ROADMAP.md](docs/ROADMAP.md): the longer-term roadmap and why it matters to DO.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the deep dive (problem framing, the compare path, reliability, rate limiting, API, deploy).
+**Live app:** https://model-fomo-qlrb3.ondigitalocean.app
+
+## Design write-up and roadmap
+
+Start with the two PDFs. They are the submission's design documents:
+
+- **[Build guide](docs/model-playground-build-guide.pdf)** (11 pages): the system one step at a time, the choice made at each step and what it gave up, known risks, and notes for DigitalOcean.
+- **[Roadmap](docs/model-playground-roadmap.pdf)** (6 pages): what to build if this gets traction, from evals on the customer's own data, to `model: "auto"` routing, to tuning a better model.
+
+For reading the code alongside them:
+
 - [docs/CODE_TOUR.md](docs/CODE_TOUR.md): the files that matter, in reading order.
-- [docs/DEMO.md](docs/DEMO.md): a 5-minute demo script.
-- [docs/SECURITY.md](docs/SECURITY.md): the security pass: what was fixed and which risks are accepted for a PoC.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): retry policy, leasing, measured numbers, API and deploy details.
+- [docs/DECISIONS.md](docs/DECISIONS.md): every choice and its source, as text.
+- [docs/SECURITY.md](docs/SECURITY.md): the security pass, and which risks are accepted for a PoC.
+- [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/DEMO.md](docs/DEMO.md): the roadmap as text, and a 5-minute demo script.
 
 ## What's in the box
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | Next.js 15 (App Router) + shadcn/ui. UI and HTTP API (compare over SSE, run history). |
+| `apps/web` | Next.js 15 (App Router) + shadcn/ui + Tailwind. UI and HTTP API (compare over SSE, run pages, run history). |
 | `packages/llm` | `ModelGateway` (retries, timeouts, rate limiting), DO Gradient provider, mock provider, LLM judge. |
 | `packages/ratelimit` | Token + request leasing, shared through Postgres (in-memory store for tests), plus the rate-event log. |
 | `packages/db` | Prisma schema and client. |

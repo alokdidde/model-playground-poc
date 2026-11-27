@@ -8,9 +8,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const run = await prisma.comparison
     .findUnique({ where: { id }, select: { prompt: true, models: true } })
     .catch(() => null);
-  if (!run) return { title: "Compare run · Model FOMO" };
+  if (!run) return { title: "Compare run · Model Playground" };
   const prompt = run.prompt.replace(/\s+/g, " ").trim();
-  const title = `${prompt.length > 70 ? `${prompt.slice(0, 69)}…` : prompt} · Model FOMO`;
+  const title = `${prompt.length > 70 ? `${prompt.slice(0, 69)}…` : prompt} · Model Playground`;
   const description = `${run.models.length} models compared side by side: ${run.models.slice(0, 6).join(", ")}${run.models.length > 6 ? ", …" : ""}.`;
   return { title, description, openGraph: { title, description, type: "article" }, twitter: { card: "summary", title, description } };
 }
