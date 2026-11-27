@@ -38,7 +38,7 @@ Goal: something customers can use on their own account. *Size: 1 or 2 engineers,
 - **Auth and tenancy**: DO account login (OAuth), per-team workspaces, each team's own model access key. The middleware hook and `principal` are already in place.
 - **Quotas and budgets**: per-team token budgets and spend caps on top of the lease store; show "this will cost about $X" before a large run.
 - **Observability**: OpenTelemetry traces across the web app and model calls, self-hosted on DO (Arize Phoenix on App Platform, or Langfuse/SigNoz on DOKS). The rate-limit events already recorded become one more exporter (`RateEventSink`). Alerts on 429 rate and capacity waits per model.
-- **Accurate tokens and prices**: per-family tokenizers, prices pulled from an API instead of a table, long-context price tiers.
+- **Accurate tokens and prices**: per-family tokenizers (today: o200k plus a learned per-model correction), prices pulled from an API instead of a table, long-context price tiers.
 - **Shareable results**: permalinks to a comparison (already there), export to CSV/JSON.
 
 ## Phase 2: Evals on your own data (1-2 quarters)

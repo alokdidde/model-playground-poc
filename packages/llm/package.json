@@ -15,6 +15,7 @@
     "@fomo/db": "workspace:*",
     "@fomo/ratelimit": "workspace:*",
     "@fomo/shared": "workspace:*",
+    "js-tiktoken": "1.0.21",
     "openai": "^7.65.0",
     "zod": "^4.6.7"
   },

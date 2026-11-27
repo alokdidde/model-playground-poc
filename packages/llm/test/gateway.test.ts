@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryEventSink } from "@fomo/ratelimit";
 import { ModelGateway, resetOfSpentCounter, tokensPerSecond } from "../src/gateway";
 import { StreamInterruptedError, UpstreamError } from "../src/errors";
-import { TokenCalibration } from "../src/tokens";
+import { estimateTokens, TokenCalibration } from "../src/tokens";
 import { ScriptedProvider, limiter, request } from "./helpers";
 
 async function* ok() {
@@ -127,7 +127,7 @@ describe("ModelGateway", () => {
 
   it("estimates usage when the provider reports none, and records ttft", async () => {
     async function* noUsage() {
-      yield { type: "delta" as const, text: "abcdefgh" };
+      yield { type: "delta" as const, text: "hello world" };
     }
     const result = await new ModelGateway(new ScriptedProvider([noUsage]), limiter()).stream(request, () => {});
     expect(result.metrics.tokensEstimated).toBe(true);
@@ -195,8 +195,17 @@ describe("ModelGateway", () => {
   });
 });
 
+describe("estimateTokens", () => {
+  it("counts with a real tokenizer, so code and non-English text are not undercounted", () => {
+    expect(estimateTokens("hello world")).toBe(2);
+    // "4 characters per token" would say 12 and 5.
+    expect(estimateTokens("for (let i = 0; i < n; i++) { a[i] = b[i] * 2; }")).toBe(27);
+    expect(estimateTokens("进程和线程有什么区别？请各举一个例子。")).toBe(14);
+  });
+});
+
 describe("TokenCalibration", () => {
-  it("learns how far the 4-characters-per-token estimate is off, per model", () => {
+  it("learns how far the o200k count is off, per model", () => {
     const c = new TokenCalibration();
     expect(c.ratio("m")).toBe(1);
     c.observe("m", 100, 150);
@@ -217,7 +226,7 @@ describe("TokenCalibration", () => {
   it("is fed by the gateway from reported usage", async () => {
     const provider = new ScriptedProvider([ok]);
     const gateway = new ModelGateway(provider, limiter());
-    const long = { ...request, messages: [{ role: "user" as const, content: "x".repeat(400) }] }; // estimate: 104 tokens
+    const long = { ...request, messages: [{ role: "user" as const, content: "x".repeat(400) }] }; // estimate: 54 tokens
     await gateway.complete(long);
     expect(gateway.calibration.ratio("m")).toBe(0.5); // ok() reports 3 input tokens, clamped at 0.5
   });

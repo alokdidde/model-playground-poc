@@ -1,14 +1,24 @@
+import { Tiktoken } from "js-tiktoken/lite";
+import o200kBase from "js-tiktoken/ranks/o200k_base";
 import type { ChatRequest } from "./types";
 
 /**
- * Rough token estimate (~4 characters per token for English text). We only
- * use it for two things, both of which tolerate error:
- *  - reserving budget in the rate limiter before a call (reconciled after),
+ * Token counts before a call, used for two things that tolerate some error:
+ *  - reserving budget in the rate limiter (reconciled with real usage after),
  *  - filling in usage when a provider does not report it (flagged as estimated).
- * TokenCalibration (below) corrects it per model from the usage the provider reports.
+ *
+ * We count with OpenAI's o200k tokenizer (tiktoken). It is exact for gpt-oss
+ * and close for the other families, and unlike "4 characters per token" it
+ * sees that code and non-English text use more tokens per character.
+ * Each family's own tokenizer still differs, so TokenCalibration (below)
+ * learns a per-model correction from the usage the provider reports.
  */
+let encoder: Tiktoken | undefined;
+
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  // Built on first use: loading the ranks takes ~100 ms, so not at import time.
+  encoder ??= new Tiktoken(o200kBase);
+  return encoder.encode(text).length;
 }
 
 export function estimateInputTokens(request: ChatRequest): number {
@@ -22,9 +32,8 @@ export function reservationFor(request: ChatRequest, ratio = 1): number {
 }
 
 /**
- * Learns, per model, how far "4 characters per token" is from the provider's
- * real count (tokenizers differ: code, non-English text and some model
- * families use more tokens per character). Each reported usage nudges a
+ * Learns, per model, how far the o200k count is from the provider's real
+ * count (each model family has its own tokenizer and chat template). Each reported usage nudges a
  * moving average of actual / estimated input tokens, which then scales the
  * next estimates. No tokenizer dependency per model family, and it adapts if
  * a provider changes tokenizer. Kept per process: a new instance relearns in
