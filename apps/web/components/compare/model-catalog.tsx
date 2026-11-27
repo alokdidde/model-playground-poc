@@ -49,15 +49,13 @@ function rank(m: ModelInfo, query: string): number {
 export function ModelCatalog({
   models,
   selectedIds,
-  canAddMore,
   onAdd,
   onAddMany,
 }: {
   models: ModelInfo[];
   selectedIds: string[];
-  canAddMore: boolean;
   onAdd: (id: string) => void;
-  /** Adds every model in the list that can be compared (the caller enforces the cap). */
+  /** Adds every model in the list that can be compared. */
   onAddMany: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -166,7 +164,7 @@ export function ModelCatalog({
             </DropdownMenuContent>
           </DropdownMenu>
           {addable.length > 1 && (
-            <Button variant="outline" size="sm" disabled={!canAddMore} title={canAddMore ? undefined : "Model limit reached"} onClick={() => onAddMany(addable)}>
+            <Button variant="outline" size="sm" onClick={() => onAddMany(addable)}>
               <Plus /> Add all {addable.length}
             </Button>
           )}
@@ -181,7 +179,7 @@ export function ModelCatalog({
       <ul className="max-h-[34rem] divide-y overflow-y-auto border-t lg:max-h-[calc(100vh-22rem)]">
         {visible.map((m) => {
           const added = selectedIds.includes(m.id);
-          const reason = m.kind !== "chat" ? "Not a chat model" : !m.available ? "Not available on your DO plan" : !canAddMore ? "Model limit reached" : undefined;
+          const reason = m.kind !== "chat" ? "Not a chat model" : !m.available ? "Not available on your DO plan" : undefined;
           return (
             <li key={m.id} className={cn("flex items-center gap-3 px-4 py-2.5", added && "bg-accent-soft/60")}>
               <ProviderAvatar provider={m.provider} />
