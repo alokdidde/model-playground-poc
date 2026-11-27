@@ -45,7 +45,10 @@ describe("runJudge (mock provider)", () => {
       selfJudged: false,
     });
     expect(verdict.scores.map((s) => s.model).sort()).toEqual(["model-x", "model-y"]);
-    expect(["model-x", "model-y"]).toContain(verdict.winnerModel);
+    expect(verdict.orders).toBe(2);
+    // A winner is a real model id, or null when the two orders disagreed (a tie).
+    if (verdict.positionConsistent) expect(["model-x", "model-y"]).toContain(verdict.winnerModel);
+    else expect(verdict.winnerModel).toBeNull();
   });
 });
 

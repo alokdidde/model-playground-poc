@@ -82,13 +82,17 @@ export class MockProvider implements ChatProvider {
     return style(prompt.replace(/\s+/g, " ").trim());
   }
 
-  /** Scores every "Response X" label in the judge prompt with plausible numbers. */
+  /**
+   * Scores every "Response X" in the judge prompt with plausible numbers.
+   * A score depends on the answer's text, not its label, so the mock judge
+   * agrees with itself when the answers are shown in reverse order.
+   */
   private judgeAnswer(request: ChatRequest): string {
     const userPrompt = request.messages.at(-1)?.content ?? "";
-    const labels = [...userPrompt.matchAll(/^### Response ([A-Z])$/gm)].map((m) => m[1]!);
-    const scores = labels.map((label) => {
-      const base = 5 + Math.floor(this.config.random() * 5);
-      return { label, accuracy: base, helpfulness: Math.min(10, base + 1), clarity: base, overall: base };
+    const blocks = [...userPrompt.matchAll(/^### Response ([A-Z])\n([\s\S]*?)(?=^### Response |(?![\s\S]))/gm)];
+    const scores = blocks.map(([, label, text]) => {
+      const base = 5 + (hash(text!.trim()) % 5);
+      return { label: label!, accuracy: base, helpfulness: Math.min(10, base + 1), clarity: base, overall: base };
     });
     const winner = [...scores].sort((a, b) => b.overall - a.overall)[0];
     return JSON.stringify({
