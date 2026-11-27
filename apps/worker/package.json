@@ -1,0 +1,19 @@
+{
+  "name": "@fomo/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "5.7.0",
+    "@fomo/db": "workspace:*",
+    "@fomo/llm": "workspace:*",
+    "@fomo/ratelimit": "workspace:*",
+    "@fomo/shared": "workspace:*",
+    "tsx": "^4.23.15"
+  }
+}

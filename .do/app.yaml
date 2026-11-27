@@ -1,0 +1,114 @@
+# DigitalOcean App Platform spec.
+#   doctl apps create --spec .do/app.yaml      (first deploy)
+#   doctl apps update <app-id> --spec .do/app.yaml
+#
+# This is the spec the live PoC runs: 1 web + 1 worker, deployed from main, and an
+# existing Managed Postgres cluster (model-fomo-pg, db-s-1vcpu-1gb) wired in by
+# secret URLs. (The account's database limit refused a spec-managed cluster; to let
+# App Platform create one instead, add a `databases:` block and use ${db.DATABASE_URL}.)
+# Set the four SECRET values in the app's settings, not in this file.
+name: model-fomo
+region: nyc
+
+# Shared by every component.
+envs:
+  # Managed Postgres: app data (Prisma), DBOS checkpoints and rate-limit leases.
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    type: SECRET
+  # Same database as the app; DBOS keeps its tables in its own "dbos" schema.
+  - key: DBOS_SYSTEM_DATABASE_URL
+    scope: RUN_TIME
+    type: SECRET
+  # DO Managed Postgres CA (PEM, from `doctl databases get-ca <cluster-id>`).
+  # DBOS uses node-postgres, which verifies TLS certificates; see packages/db/src/dbos-url.ts.
+  - key: DATABASE_CA_CERT
+    scope: RUN_TIME
+    value: ""
+  - key: GRADIENT_BASE_URL
+    scope: RUN_TIME
+    value: https://inference.do-ai.run/v1
+  - key: DO_MODEL_ACCESS_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: GRADIENT_MOCK
+    scope: RUN_TIME
+    value: "0"
+  - key: JUDGE_MODEL
+    scope: RUN_TIME
+    value: openai-gpt-oss-120b
+  - key: JUDGE_FALLBACK_MODELS
+    scope: RUN_TIME
+    value: deepseek-v4.1-flash,glm-5.3-flash
+  # Leases live in Postgres (the only shared store this PoC needs).
+  - key: LEASE_STORE
+    scope: RUN_TIME
+    value: postgres
+  # Fallback limits per model until the response headers teach the real ones (120 RPM per model on DO).
+  - key: RATE_LIMIT_RPM
+    scope: RUN_TIME
+    value: "100"
+  - key: RATE_LIMIT_TPM
+    scope: RUN_TIME
+    value: "1200000"
+  - key: RATE_LIMIT_MAX_IN_FLIGHT
+    scope: RUN_TIME
+    value: "16"
+  # Batch evals may use 30% of each model's capacity; interactive compares keep the rest.
+  - key: RATE_LIMIT_BATCH_SHARE
+    scope: RUN_TIME
+    value: "0.3"
+
+services:
+  - name: web
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: Dockerfile
+    http_port: 3000
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: web
+    health_check:
+      http_path: /api/health
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+
+workers:
+  - name: worker
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: Dockerfile
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: worker
+
+jobs:
+  # Applies Prisma migrations before the new version takes traffic.
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: alokdidde/model-playground-poc
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: Dockerfile
+    run_command: pnpm --filter @fomo/db migrate:deploy
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs:
+      - key: COMPONENT
+        scope: BUILD_TIME
+        value: worker
