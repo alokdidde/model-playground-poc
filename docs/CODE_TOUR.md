@@ -64,7 +64,7 @@ A bucket is per (hashed key, model). A lease reserves 1 request plus estimated t
 
 ## 10. Seeing what the limiter did: `packages/ratelimit/src/events.ts`, `apps/web/lib/server/rate-events.ts`, `apps/web/app/ops/rate-limits/page.tsx`
 
-`events.ts` defines one event per limiter or retry decision (lease granted or waited for, 429, cooldown, limits learned, AIMD factor changed, retry, attempt ok or failed). `RateLimiter` and `ModelGateway` emit them, tagged with the comparison id, and `PostgresEventSink` writes them in one insert per second, never blocking a model call. `/ops/rate-limits` draws a per-model timeline and summary; each run page links to its own. `scripts/stress-compare.mjs` fires many parallel compares and prints the summary.
+`events.ts` defines one event per limiter or retry decision (lease granted or waited for, 429, cooldown, limits learned, AIMD factor changed, retry, attempt ok or failed). `RateLimiter` and `ModelGateway` emit them, tagged with the comparison id, and `PostgresEventSink` writes them in one insert per second, never blocking a model call. `/ops/rate-limits` draws a per-model timeline and summary, and `?tag=<comparison id>` narrows it to one compare. It is an ops view, so it is linked from the docs rather than the nav. `scripts/stress-compare.mjs` fires many parallel compares and prints the summary.
 
 - **Expect:** "Why not OTel?" These are domain decisions (why a call waited, what a retry slept), not spans, and Postgres is already there. An OTel exporter would be one more `RateEventSink`. "What does it cost?" One small insert per second while calls are running, and rows older than 7 days are pruned.
 
