@@ -36,6 +36,36 @@ export function normalise(w: PriorityWeights): PriorityWeights {
   return { quality: w.quality / sum, cost: w.cost / sum, speed: w.speed / sum };
 }
 
+const KEYS = ["quality", "cost", "speed"] as const;
+
+/**
+ * Sets one weight to `share` (0..1) and splits the rest between the other two
+ * in their current ratio (evenly if both are zero). The result always sums to
+ * 1, so each custom slider shows its real share of 100%.
+ */
+export function setWeight(w: PriorityWeights, key: keyof PriorityWeights, share: number): PriorityWeights {
+  const v = Math.min(1, Math.max(0, share));
+  const n = normalise(w);
+  const others = KEYS.filter((k) => k !== key);
+  const rest = others.reduce((s, k) => s + n[k], 0);
+  const next = { ...n, [key]: v };
+  for (const k of others) next[k] = rest > 0 ? ((1 - v) * n[k]) / rest : (1 - v) / others.length;
+  return next;
+}
+
+/** Whole percentages that add up to exactly 100 (largest remainder). */
+export function percentages(w: PriorityWeights): Record<keyof PriorityWeights, number> {
+  const n = normalise(w);
+  const raw = KEYS.map((k) => ({ k, x: n[k] * 100 }));
+  const out = Object.fromEntries(raw.map(({ k, x }) => [k, Math.floor(x)])) as Record<keyof PriorityWeights, number>;
+  let left = 100 - KEYS.reduce((s, k) => s + out[k], 0);
+  for (const { k } of [...raw].sort((a, b) => (b.x % 1) - (a.x % 1))) {
+    if (left-- <= 0) break;
+    out[k] += 1;
+  }
+  return out;
+}
+
 export interface Candidate {
   model: string;
   score: JudgeScore;
