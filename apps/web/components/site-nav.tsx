@@ -10,7 +10,7 @@ export function SiteNav() {
           <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md">
             <Layers className="size-4" />
           </span>
-          <span>Model FOMO</span>
+          <span>Model Playground</span>
         </Link>
       </nav>
     </header>

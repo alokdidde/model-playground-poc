@@ -1,14 +1,14 @@
-# Decisions: what I built, what I skipped, and why
+# Decisions: what I built, what I left out, and why
 
-The one-page version of the design. [ARCHITECTURE.md](ARCHITECTURE.md) has the details behind each line, and [ROADMAP.md](ROADMAP.md) has what comes next.
+The one-page version of the design, in text. The build guide PDF is the illustrated version. [ARCHITECTURE.md](ARCHITECTURE.md) has the details behind each line, and [ROADMAP.md](ROADMAP.md) has what comes next.
 
 ## The goal
 
-Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* One prompt answered by five models is a demo. A decision needs evidence. So the PoC goes in three steps:
+Customers with model FOMO ask: *"did I pick the right model for my prompts?"* One prompt answered by five models is a demo. A decision needs evidence. So the PoC goes in three steps:
 
 1. **Show me.** Send one prompt to several DO models at once and watch them stream side by side, with cost, speed and tokens.
 2. **Combine it.** Get one view across the answers: a neutral judge scores them, a synthesizer merges them with citations, and a recommendation weighs quality against cost and speed ("X scores 1 point below the best at 1/10th of the cost").
-3. **Learn from it.** Every compare is saved with its answers, scores and metrics, and has its own page. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
+3. **Learn from it.** Every compare is saved with its answers, scores and metrics, and has its own page. Running the same models over many prompts at once (batch evals) is the next step on the [roadmap](ROADMAP.md).
 
 ## What I built
 
@@ -20,17 +20,20 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 | One `ModelGateway` with retries and shared rate limiting | Every model call, from every web instance, shares the same retries, timeouts and budget, so the whole system stays inside DO's per-model limits. |
 | Rate-limit observability (`/ops/rate-limits`) | Every limiter and retry decision (waited for capacity, got a 429, cooled down, learned a limit, halved the factor, slept N ms before a retry) is one row in Postgres, drawn as a timeline per model and per compare. Without it, "how does it behave under load?" is a guess. It is an engineer's ops view of the architecture, not a user feature, so it is not in the nav or on the run page; the docs link to it. |
 
-## What I deliberately skipped
+## Out of scope, on purpose
 
-| Skipped | Why | Where it goes |
+| Left out | Why | Where it goes |
 | --- | --- | --- |
 | Auth and multi-tenancy | Not needed to judge the idea. `middleware.ts` already has the `authenticate()` hook and every route receives a `principal`. | Roadmap phase 1 |
-| Batch evals (many prompts × many models) | Built (DBOS workflows in a separate worker, a batch lane in the rate limiter, an eval report) and then cut. It doubled the moving parts (a second service, a workflow engine, lane arithmetic, a TLS workaround) for a step the brief doesn't ask for, and every part has to be defended in review. | Roadmap phase 2 |
+| Batch evals (many prompts × many models) | They need durable background jobs: a second service, a workflow engine, and a separate share of each model's rate limit. The brief asks for one input across many models, so the PoC stays one service. | Roadmap phase 2 (DBOS workflows on the same Postgres) |
+| Per-dataset leaderboards | Scores from unrelated prompts don't average into a fair ranking: a 7/10 on a hard coding prompt and a 7/10 on a one-line definition don't mean the same thing. The comparison that holds is within one run, where every model answered the same prompt. | Roadmap phase 2, with batch evals |
+| A "help me choose" advisor | The brief asks for a side-by-side view and a combined result. An advisor is only as good as the measured runs behind it. | Roadmap phase 3 |
+| Guardrails and private networking | Not needed for a PoC shared only with reviewers (see the known risks in [SECURITY.md](SECURITY.md)). | Roadmap phase 1 |
 | Observability stack (OTel, Phoenix/Langfuse) | It has to be self-hosted on DO, which is a project of its own. Rate-limit events plus one structured log line per request cover the PoC. An OTel exporter would be one more `RateEventSink`. | Roadmap phase 1 |
-| Non-text models (embedding, reranker, image, audio, video, routers) | The brief compares outputs for one input, and the judge, synthesis and metrics are built for text answers. These models are filtered out of the catalog and rejected by the API, as are models this account's plan can't call (all Anthropic and proprietary OpenAI), so a user is never offered a model that can only fail. | Roadmap: multimodal compare |
-| Kubernetes (DOKS) and a Helm chart | App Platform gives builds, TLS and scaling from one spec file. I provisioned a cluster, found it bought nothing for one app, and deleted it and the chart. | When a background worker needs queue-depth autoscaling, or sidecars |
-| A Valkey lease store | Faster than Postgres at high call rates, but the live app never needed it, so I removed it rather than keep untested code. | One more `LeaseStore` when traffic grows |
-| Temporal / DBOS | Only needed for durable batch work, which was cut. If batch comes back, DBOS (a library on the Postgres we already run) is the first choice; Temporal needs its own cluster. | With batch evals |
+| Non-text models (embedding, reranker, image, audio, video, routers) | The judge, synthesis and metrics are built for text answers. These models are filtered out of the catalog and rejected by the API, as are models this account's plan can't call (all Anthropic and proprietary OpenAI), so a user is never offered a model that can only fail. | Roadmap phase 2: multimodal compare |
+| Kubernetes (DOKS) and a Helm chart | App Platform gives builds, TLS and scaling from one spec file. For one web service, a cluster and a chart add work without adding anything. | When a background worker needs queue-depth autoscaling, or sidecars |
+| A Valkey lease store | Faster than Postgres at high call rates, but the live load doesn't need it yet, and Postgres is already there. | One more `LeaseStore` when traffic grows |
+| Temporal / DBOS | Only needed for durable batch work. DBOS (a library on the Postgres we already run) is the first choice; Temporal needs its own cluster. | With batch evals |
 | Self-hosted models and fine-tuning | The brief is to use DO's AI products, and serverless inference covers it. Votes and judge verdicts are collected as future training data. | Roadmap phase 4 |
 | Council / debate mode | Higher cost and latency for unclear gain at PoC stage. The synthesizer is the cheap version. | Roadmap phase 3 |
 | Tool calling | Out of scope for comparing answers. | Roadmap (agent-level comparison) |
@@ -39,7 +42,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 
 1. **SSE, not WebSockets.** The stream is one-way, SSE runs over plain HTTP through App Platform's load balancer, and cancel is just closing the request.
 2. **Retry only before the first token.** Retrying after text reached the screen would show it twice. After that point a failure keeps the partial answer and is marked failed.
-3. **Plain requests, no job system.** A compare is seconds long and a person is watching it; if the server dies, "run it again" is the right recovery. That is why batch evals, which do need durability, were cut rather than half-built.
+3. **Plain requests, no job system.** A compare is seconds long and a person is watching it; if the server dies, "run it again" is the right recovery. Durable jobs come with batch evals, which do need them.
 4. **Lease-based rate limiting, learned from headers.** DO doesn't publish per-model limits, but every response carries `x-ratelimit-*` headers. We learn the limits, reserve tokens before each call, and share one budget across instances. DO's 429s carry no `Retry-After`, so a retry waits for the reset of the counter the headers show as spent, or fails at once if that is longer than a person will wait.
 5. **The judge is a second opinion, not ground truth.** Each guard against a known bias is in place because research on LLM judges measured that bias (next section). Human votes are stored so judge/human agreement can be measured.
 
@@ -61,9 +64,8 @@ An LLM judge has measured biases. Each guard below exists because a paper measur
 The brief asks for a multi-model compare with a combined view. Three parts go further, and each one is the smallest version that makes the core experience trustworthy:
 
 - **Rate-limit leasing, and its event log.** Many people comparing at once share one DO key, and DO limits each (key, model) to 120 requests a minute. Without a shared budget, every web instance would think it had the whole limit and users would collect 429s. Leasing in the Postgres we already run is the minimum that keeps instances inside one budget; retries alone only react after the limit is hit. The event log is what lets us show, not claim, how it behaves (stress test numbers in [ARCHITECTURE § 4](ARCHITECTURE.md#4-reliability-the-modelgateway)).
-- **Help me choose: built, then cut.** A plain-language advisor (use case in, shortlist ranked from measured runs out) was built and removed on 2026-11-27. The brief asks for a side-by-side view and a combined result, not an AI assistant, and every extra LLM feature is more to defend. It is on the roadmap as the first step toward the agentic assistant.
-- **Task types: built, then cut.** Compare had a "Task type" picker (General, Coding, Reasoning, Writing, Summarize, Extraction / JSON, Support) that added one line of guidance to the judge and set a default priority. It was removed on 2026-11-27 after a live test: six prompts, three models, each set judged with General twice, with the matching type and with a wrong type. The matching type picked the same winner as General for coding, reasoning, writing and support; two General runs disagreed with each other about as often as a type changed the result; and a wrong type (say Extraction on a summary prompt, which is easy to leave selected) moved the winner in three of six cases. The one real effect was Extraction rewarding strict JSON, so that became one general rule in the rubric ("if the prompt asks for a specific format, weigh following it exactly"). With it, plain General picked the strict-JSON answer three times out of three. The judge reads the prompt, so it doesn't need to be told what kind of task it is, and a setting that can only add error is better gone. The `taskType` column stays in the schema, unused, so old rows need no migration.
-- **Leaderboard: built, then cut.** A page averaged judge scores, win rates, speed and cost across every compare (with 95% confidence intervals and a task-type filter), and was removed on 2026-11-27. Different prompts carry different expectations: a 7/10 on a hard coding prompt and a 7/10 on a one-line definition don't mean the same thing, and judge scores aren't calibrated across prompts. So an average across unrelated runs looks like evidence but isn't. The comparison that holds is within one run, where every model answered the same prompt, and that is the combined view on each run page. A leaderboard over a fixed prompt set that shares expectations (a batch eval on one dataset, or one task category) is on the roadmap.
+- **One rubric for every prompt.** The judge reads the prompt itself, so there is no task-type setting to pick. One general rule covers format-sensitive prompts: "if the prompt asks for a specific format, weigh following it exactly". A setting the user can leave on the wrong value can only add error.
+- **The combined view is per run.** Every model answered the same prompt, so scores within a run compare like with like. Rankings across prompts belong to a dataset with shared expectations (roadmap phase 2).
 
 ## Related work
 
@@ -106,13 +108,12 @@ What I ran into while building on DO's AI stack, and what would have helped. Eac
 | Models accept different parameters: Kimi rejects `temperature` and `top_p`, and some models reject `reasoning_effort`. | Requests fail with 400s that look like bugs on the caller's side. | Publish per-model capabilities in the models API. |
 | The docs don't say whether `stream_options.include_usage` is supported. | Streaming token counts (and so cost) may be estimates. | State it in the API reference. |
 | The account's database cluster limit refused an App Platform spec-managed database. | The live app wires an existing cluster in through secret URLs instead. | A clearer error in App Platform, and a pointer to the limit. |
-| 429s carry no `Retry-After`. The body names the spent counter (`requests_per_minute`), and the counter is a sliding window: after a burst everything gets 429 until about the minute boundary, then capacity comes back about 2 requests a second. The `reset` header is sometimes a few seconds off. | Clients have to guess when to retry. Our first version retried after 70 ms against a 5.8 s reset and just collected more 429s. | Send `Retry-After` on every 429 and document the window algorithm. |
-| node-postgres treats `sslmode=require` as full verification, and DO Postgres signs with a per-account CA. | An earlier version (batch evals on DBOS) hung on "self-signed certificate in certificate chain". | Document the CA for Node clients next to the connection string, or expose it as an App Platform bindable variable. |
-| Opportunity: batch inference is cheaper for some models. | Batch evals could cost much less. | Make batch inference available for the same models through the same key, so eval tools can use it. |
+| 429s carry no `Retry-After`. The body names the spent counter (`requests_per_minute`), and the counter is a sliding window: after a burst everything gets 429 until about the minute boundary, then capacity comes back about 2 requests a second. The `reset` header is sometimes a few seconds off. | Clients have to guess when to retry. A short backoff (say 70 ms against a 5.8 s reset) just collects more 429s. | Send `Retry-After` on every 429 and document the window algorithm. |
+| node-postgres treats `sslmode=require` as full verification, and DO Postgres signs with a per-account CA. | Node clients other than Prisma (for example a DBOS worker) fail with "self-signed certificate in certificate chain". | Document the CA for Node clients next to the connection string, or expose it as an App Platform bindable variable. |
 
-## What I'd do differently with more time
+## With more time, I would
 
-- Feature-freeze earlier, and cut sooner. Batch evals were built in full before I weighed what they cost to explain; scoping them to the roadmap from the start would have left more time for tests and review.
-- Measure judge/human agreement from day one, and seed some human votes during testing.
-- Build the judge's position and length controls in from the start instead of adding them at the end.
-- Write a test for each core path as it's written, not afterwards.
+- Seed human votes during testing.
+- Measure judge and human agreement from day one.
+- Build the judge's position and length guards in from the start.
+- Write each core test alongside its code.

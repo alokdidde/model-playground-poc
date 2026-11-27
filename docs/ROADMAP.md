@@ -1,95 +1,99 @@
-# Roadmap: beyond side-by-side compare
+# Roadmap: if Model Playground gets traction
 
-The PoC answers "which of these models did best on *this* prompt?". If it gets traction, the real customer question becomes "**which model should I use for my workload, and how do I know it's still the right one?**". Comparing outputs by hand doesn't scale; the roadmap moves from *showing* answers, to *measuring* models on the customer's own data, to *choosing* the model automatically, and finally to *making* a better model.
+The PoC answers "which of these models did best on *this* prompt?". With traction, the customer's real question becomes "**which model should I use for my workload, and is it still the right one?**". Comparing answers by hand doesn't scale. The roadmap moves from *showing* answers, to *measuring* models on the customer's own data, to *choosing* the model automatically, and finally to *making* a better one.
 
-Each phase reuses what the previous one collected: comparisons, judge verdicts, human votes, cost and latency.
+This is the text version of the roadmap PDF that accompanies the build guide. Each phase reuses what the one before it collected: comparisons, judge verdicts, human votes, cost and latency.
 
-## Why this matters to DigitalOcean
+| Stage | Phases | What it means |
+| --- | --- | --- |
+| **Show** | 0, the PoC | Side-by-side answers with a neutral judge, a synthesis and a recommendation. |
+| **Measure** | 1 and 2 | On the customer's account, with their own prompts and rubrics. |
+| **Decide** | 3 and 4 | Route each request for them, then train a model that beats off-the-shelf. |
 
-DO earns money when customers send inference traffic through DO and keep it there. Model FOMO hurts that in two ways. Customers who aren't sure stay on a default model and never try others. Others leave for a provider whose "best model" they read about. Each phase below turns that uncertainty into more usage on DO:
+## What each phase could offer
 
-| Phase | What the customer gets | What DO gets | DO products it uses or sells |
+Customers who aren't sure they picked the right model tend to stay on one default, or go looking elsewhere. The value to the customer is clear: evidence for their own workload. What it means for DigitalOcean is written below as a hypothesis from the outside, to test with DO's product team and data.
+
+| Phase | The customer gets | How it could help DO | DO products |
 | --- | --- | --- | --- |
-| 1. Production ready | Use it on their own account and budget | Trial of more models per customer; a reason to sign in to the AI section | Serverless inference, App Platform, batch inference |
-| 2. Evals on your data | Evidence for their own workload | Stickiness: datasets and scheduled evals live on DO, and forced model upgrades become a DO-guided migration, not a reason to shop around | Serverless and batch inference, Spaces (datasets), Managed Postgres |
-| 3. Choose for me | `model: "auto"` routing at a quality bar | All of a customer's traffic goes through a DO endpoint; DO can shift volume to models with better margin at equal quality | Serverless inference, the agent platform |
-| 4. Make a better model | A tuned or distilled model that beats off-the-shelf | Higher-value workloads: fine-tuning jobs and dedicated GPU capacity | Dedicated inference, GPU Droplets, the agent platform (knowledge bases, agents) |
+| 1. Production ready | Model Playground on their own account, key and budget | Customers try more of the models already on offer | Serverless inference, App Platform |
+| 2. Evals on your data | Evidence on their own workload | Evaluation data lives next to the models, so a model change can be a guided step | Serverless inference, Spaces, Managed Postgres |
+| 3. Choose for me | `model: "auto"` at a quality bar they set | A routing endpoint that builds on DO's own inference | Serverless inference, agent platform |
+| 4. Better model | A tuned model that beats off-the-shelf on their data | A path to fine-tuning and dedicated capacity for customers who outgrow off-the-shelf models | Dedicated inference, GPU Droplets |
 
-**Why this order:** each phase needs the data the one before it collects. Routing (3) is only trustworthy once evals on customer data (2) exist, and fine-tuning (4) needs the preference pairs that 1 to 3 gather. It also ships value early. Phase 1 is weeks and uses only existing DO products.
+**Why this order.** Each phase needs the data the one before it collects. Routing is only trustworthy once there are evals on customer data, and fine-tuning needs the preference pairs that the earlier phases gather. Phase 1 uses only DO products that exist today, so value ships early.
 
-**What we would not build:** a public, general-purpose benchmark leaderboard. Those exist already, and they answer "which model is best in general", which is the wrong question. Our edge is the customer's own prompts.
+**Ship first: judge and human agreement.** It tells us whether the combined view can be trusted, which everything after it depends on. It's small, and it uses votes the PoC already collects. Batch evals come right after.
 
-## The first thing to ship next
+**Do** build on the customer's own prompts: public benchmarks can't see their workload, and that is our edge. **Don't** build another public, general-purpose leaderboard: those exist, and they answer "which model is best in general", the wrong question.
 
-**Judge/human agreement, then batch evals.** Agreement tells us whether the combined view can be trusted, which everything after it depends on; it is small (days) and uses data that already exists. Batch evals (one model set over many prompts, with a cost estimate before the run) are the step after, and the first thing in phase 2.
-
-## Phase 0: PoC (this repo)
+## Phase 0: the PoC (this repo)
 
 - Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
-- Combined view: LLM-as-judge scores (shuffled, anonymised, neutral judge), a synthesized answer with per-model citations, and a cost/quality/speed recommendation; thumbs up/down and votes.
-- Built and cut: a leaderboard across every compare. Cut because prompts with different expectations don't average into a fair ranking; the per-run combined view is the comparison.
-- Built and cut: Help me choose, a plain-language advisor. Cut because the brief doesn't ask for an assistant; it returns below as the first step of the agentic assistant.
-- Shared, lease-based rate limiting so the whole system stays inside the account's limits, with every limiter and retry decision recorded and drawn as a timeline (`/ops/rate-limits`).
-- Built and cut: durable batch evals (DBOS worker). Cut to keep the PoC small enough to defend line by line; the design notes carry into phase 2.
+- A combined view: a neutral LLM judge run in both orders, a synthesized answer with per-model citations, and a recommendation that weighs quality against cost and speed. Human votes and thumbs sit beside the judge.
+- Shared, lease-based rate limiting that keeps every instance inside the account's per-model limits, with every decision recorded and drawn as a timeline at `/ops/rate-limits`.
 
-## Phase 1: Production-ready (weeks)
+## Phase 1: Production ready
 
-Goal: something customers can use on their own account. *Size: 1 or 2 engineers, about 4 to 6 weeks. Main risk: per-customer limits and spend (many users on one customer's key can use up their quota).*
+Goal: customers use it on their own account, with their own key and budget.
 
-- **Auth and tenancy**: DO account login (OAuth), per-team workspaces, each team's own model access key. The middleware hook and `principal` are already in place.
-- **Quotas and budgets**: per-team token budgets and spend caps on top of the lease store; show "this will cost about $X" before a large run.
-- **Observability**: OpenTelemetry traces across the web app and model calls, self-hosted on DO (Arize Phoenix on App Platform, or Langfuse/SigNoz on DOKS). The rate-limit events already recorded become one more exporter (`RateEventSink`). Alerts on 429 rate and capacity waits per model.
-- **Accurate tokens and prices**: per-family tokenizers (today: o200k plus a learned per-model correction), prices pulled from an API instead of a table, long-context price tiers.
-- **Shareable results**: permalinks to a comparison (already there), export to CSV/JSON.
+- **Sign-in and team workspaces.** DO account login, workspaces per team, each with its own model access key. The PoC already routes every request through an `authenticate()` hook, so this slots in.
+- **Quotas and budgets.** Per-team token budgets and spend caps on top of the lease store, and "this will cost about $X" before a large run. Many users on one customer's key can use up their whole quota.
+- **Guardrails.** Input and output moderation and PII scrubbing, because real customers will paste real data. Later, refusal rates and safety behaviour as one more column in the comparison.
+- **Private networking.** App and database inside a VPC, the database open only to the app, and scoped keys per team. The PoC calls everything over public endpoints with one account-wide key.
+- **Observability on DO.** OpenTelemetry traces across the app and model calls, self-hosted: Arize Phoenix on App Platform, or Langfuse or SigNoz on DOKS. Alerts on 429 rate and capacity waits. The PoC's rate-event log becomes one more exporter (`RateEventSink`).
+- **Accurate cost.** Per-family tokenizers, prices from an API instead of a table, long-context price tiers, and tokens from failed attempts counted. Cost is half of every recommendation, so it has to be right.
 
-## Phase 2: Evals on your own data (1-2 quarters)
+*Main risk:* per-customer limits and spend. One busy team can exhaust a shared key, so budgets ship with sign-in, not after.
+*How we'd know it works:* weekly active comparers, compares per user, the share of compares with a human vote, and judge and human agreement.
 
-Goal: replace "vibes" with evidence on the customer's workload. *Size: a small team (3 or 4 engineers). Main risk: judge quality on specialised domains. Mitigated by calibration against human labels and deterministic checks.*
+## Phase 2: Evals on your own data
 
-- **Batch evals**: run a model set over many prompts as a durable background job (DBOS workflows in a worker on the same Postgres; a PoC version was built and cut, so the design is proven), with a cost estimate before the run, a report (scores, wins, p50/p95 latency, cost per prompt) and DO's batch inference (up to 50% off for some models) for runs that don't need to finish in minutes. Batch needs its own share of each model's rate limit so it never starves a person watching a compare.
-- **Potential: multimodal compare**: the same side-by-side view for image, audio and video generation, and for embeddings and rerankers scored on a retrieval set. Each needs its own judge (a vision model for images, retrieval metrics for embeddings) and its own cost units, which is why the PoC lists only text-generation models.
-- **Datasets**: upload prompts (CSV/JSONL) with optional reference answers, or capture them from production traffic (opt-in, sampled, PII-scrubbed).
-- **Custom rubrics and graders**: per-dataset judge prompts, plus deterministic checks (JSON schema valid, regex, contains/doesn't contain, code compiles, exact match) mixed with LLM judges.
-- **Judge/human agreement from votes**: report how often the judge's winner matches the human "best answer" vote and thumbs, per dataset, using the votes we already collect. Where agreement is low, re-weight or replace the judge for that task.
-- **A panel of judges**: for high-stakes runs, several smaller judges from different model families vote instead of one large judge. This cuts both one model's bias and cost (Verga et al. 2024, *Replacing Judges with Juries*). It builds on the two-order judging we already do.
-- **Potential: per-dataset or per-category leaderboards**: rank models only across prompts that share expectations (one batch-eval dataset, or one task category with a fixed rubric), with confidence intervals so overlapping models aren't shown as different. This is the honest version of the cross-run leaderboard that was cut from the PoC.
-- **Cost/quality/latency frontier**: a Pareto chart per dataset ("Model B is 95% as good as Model A at 20% of the price").
-- **Regression testing for prompts and models ("CI for prompts")**: re-run a dataset on a schedule or on every prompt change, and alert when quality drops. This matters on DO specifically because only the two most recent versions of each model stay available, so model upgrades are forced.
+Goal: replace "it felt better" with evidence on the customer's workload.
 
-## Phase 3: Choose for me (2-3 quarters)
+- **Judge and human agreement.** Report how often the judge's winner matches the human "best answer" vote, per dataset. Where agreement is low, re-weight or replace the judge for that task. Everything that follows trusts the judge, so measure it first, with votes we already collect.
+- **Batch evals.** One set of models over many prompts as durable background jobs (DBOS workflows on the same Postgres), with a cost estimate before the run and a report of scores, wins, p50 and p95 latency and cost per prompt. One prompt is an anecdote; a dataset is evidence. Batch work gets its own share of each model's rate limit, so it never starves a person watching a compare.
+- **Datasets.** Upload prompts as CSV or JSONL with optional reference answers, or capture them from production traffic: opt-in, sampled and PII-scrubbed.
+- **Custom rubrics and checks.** Per-dataset judge prompts, mixed with deterministic checks: valid JSON schema, regex, exact match, code compiles. Where a rule can decide, don't ask a model.
+- **Leaderboards per dataset.** Rank models only across prompts that share expectations (one dataset, or one task category with a fixed rubric), with confidence intervals so overlapping models aren't shown as different. A 7/10 on a hard coding prompt and a 7/10 on a one-line definition don't mean the same thing, so averaging across unrelated prompts misleads.
+- **A panel of judges.** For high-stakes runs, several smaller judges from different model families vote instead of one large judge. It cuts both one model's bias and cost (Verga et al. 2024, *Replacing Judges with Juries*).
+- **CI for prompts.** Re-run a dataset on a schedule or on every prompt change, and alert when quality drops. Model versions get retired, so the right model today can change without the customer touching anything.
+- **Multimodal compare.** The same side-by-side view for image, audio and embedding models, each modality with its own judge and its own cost units.
 
-Goal: the customer stops picking models by hand. *Size: the phase 2 team plus an ML engineer. Main risk: trust. A wrong route is a production incident for the customer, so start with shadow traffic and explicit quality bars.*
+*Main risk:* judge quality on specialised domains. Calibrate against human labels and lean on deterministic checks where they apply.
+*How we'd know it works:* datasets created, scheduled eval runs, and regressions caught before the customer noticed.
 
-- **Model recommendations**: "for prompts like yours, use X": a nearest-neighbour lookup over embeddings of past evaluated prompts, using judge scores and votes as labels.
-- **Learned routing**: train a router on accumulated (prompt, model, score, cost) data to pick, per request, the cheapest model expected to meet the quality bar (as in FrugalGPT 2023 and RouteLLM 2024). This powers `model: "auto"` below.
-- **Smart routing endpoint**: an OpenAI-compatible endpoint where `model: "auto"` routes each request to the cheapest model predicted to meet a quality bar, using a small classifier trained on accumulated eval data. Customers set the policy (cost-optimised, quality-optimised, latency SLO).
-- **Fallback chains**: if the primary model is rate-limited or down, fail over to the next-best model for that task (the gateway already knows about 429s and outages).
-- **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
-- **Council / ensemble mode**: the PoC's synthesizer, promoted to an API: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
+## Phase 3: Choose for me
 
-- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. The first step is a non-agentic "Help me choose" (built once, then cut from the PoC): an LLM turns plain words into quality/cost/speed weights and sample prompts, our code ranks models from measured eval data, and the LLM explains that ranking using only those numbers, then opens Compare prefilled. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
+Goal: the customer stops picking models by hand.
 
-## Phase 4: Make a better model (longer term)
+- **A "help me choose" advisor.** Describe the use case in plain words. An LLM turns that into quality, cost and speed weights and sample prompts; our code ranks models from measured runs; the LLM explains the ranking using only those numbers, then opens a compare prefilled. It answers the FOMO question before anyone picks models, and the decision still comes from measurements.
+- **Recommendations.** "For prompts like yours, use X": a nearest-neighbour lookup over past evaluated prompts, with judge scores and votes as labels.
+- **Smart routing endpoint.** An OpenAI-compatible endpoint where `model: "auto"` routes each request to the cheapest model expected to meet the customer's quality bar, using a router trained on accumulated eval data. This is the approach of FrugalGPT (2023) and RouteLLM (2024): pay for a big model only when a small one won't do.
+- **Fallbacks, shadow and A/B traffic.** Fail over to the next-best model when one is rate-limited or down. Send a sample of live traffic to a candidate in the background, judge it offline, and promote it when it wins. The gateway already knows about 429s and outages.
+- **Council mode as an API.** Several models answer, then a synthesizer merges the best parts, or models critique each other before a final answer. More cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
+- **An agentic assistant.** Grows out of the advisor: it picks candidate models, collects sample prompts, runs the benchmarks through the existing APIs, and explains the tradeoffs. It spends the customer's tokens, so it needs budgets, approval steps and its own evals first. The agent plans and explains; measured results decide.
 
-Goal: close the loop from preferences to a model tuned for the customer. *Size: needs GPU capacity and an ML platform team. Main risk: cost and a long payback per customer, so it suits high-volume customers first.*
+*Main risk:* trust. A wrong route is a production incident for the customer, so start with shadow traffic and explicit quality bars.
+*How we'd know it works:* share of traffic on `model: "auto"`, and cost saved against the customer's previous fixed model at equal quality.
 
-- **Preference data**: every vote and judge verdict is a (prompt, chosen, rejected) pair, the exact format DPO-style fine-tuning needs.
-- **Fine-tune and distill**: fine-tune an open-weight model (or distill a large model's outputs into a small one) on that data, deploy it on DO dedicated inference, and evaluate it against the incumbents on the customer's dataset before switching traffic.
-- **Agent-level comparisons**: compare whole DO AI agents (model + system prompt + knowledge base + tools), not just models, since that's what customers actually ship.
+## Phase 4: Make a better model
 
-## How we'd measure success
+Goal: close the loop from preferences to a model tuned for the customer.
 
-| Phase | Signal |
-| --- | --- |
-| 0-1 | Weekly active comparers; comparisons per user; share of comparisons with a vote; judge/human agreement rate. |
-| 2 | Datasets created; scheduled eval runs; regressions caught before customers noticed. |
-| 3 | Share of traffic on `model: "auto"`; cost saved vs. the customer's previous fixed model at equal quality. |
-| 4 | Fine-tuned models deployed; win rate of tuned models vs. the best off-the-shelf model. |
+- **Preference data.** Every vote and judge verdict is a (prompt, chosen, rejected) pair, the format DPO-style fine-tuning needs. Phases 1 to 3 collect it as a by-product.
+- **Fine-tune and distill.** Tune an open-weight model, or distill a large model into a small one, deploy it on DO dedicated inference or GPU Droplets, and switch traffic only after it beats the incumbents on the customer's dataset.
+- **Agent-level comparisons.** Compare whole DO agents (model, system prompt, knowledge base and tools), not just models. That's what customers actually ship.
 
-## Technical evolution that supports this
+*Main risk, and the signal:* cost and a long payback per customer. We'd count tuned models deployed, and their win rate against the best off-the-shelf model.
 
-- **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (one more `LeaseStore` implementation behind the existing contract tests).
-- **Eval reports → materialised views** refreshed on a schedule; eventually a column store for analytics on millions of results.
-- **API → standalone gateway service** (the `llm` + `ratelimit` packages lift out unchanged) when the routing endpoint ships; at that point a Rust or Go proxy may be worth it for per-request overhead.
-- **App Platform → DOKS** when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
-- **Batch work → DBOS, then Temporal** only if orchestration outgrows a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.
+## Scaling: infrastructure grows with load, not before
+
+The first ceiling is DO's per-model rate limit, not our servers. The lease store already shares that budget across instances, so adding web instances is safe today. Beyond that:
+
+| From | To | When |
+| --- | --- | --- |
+| Postgres leases | Valkey | When a transaction per model call starts to show. One more `LeaseStore` behind the same contract tests. |
+| App Platform | DOKS | When workers need queue-depth autoscaling or sidecars, or to self-host observability next to the app. |
+| In-app gateway | Gateway service | When the routing endpoint ships. The `llm` and `ratelimit` packages lift out unchanged. |
+| DBOS | Temporal | Only if batch orchestration outgrows one Postgres: many regions or many owning teams. |

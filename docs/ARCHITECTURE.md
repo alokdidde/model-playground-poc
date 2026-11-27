@@ -4,7 +4,7 @@
 
 ### Framing
 
-**Model FOMO** is decision anxiety: "did I pick the right model for *my* prompts, or am I overpaying / under-serving because I don't know what else is out there?" Customers on DigitalOcean can call dozens of hosted models through one key, which makes the choice cheap to change but hard to make.
+**Model FOMO** (the problem Model Playground addresses) is decision anxiety: "did I pick the right model for *my* prompts, or am I overpaying / under-serving because I don't know what else is out there?" Customers on DigitalOcean can call dozens of hosted models through one key, which makes the choice cheap to change but hard to make.
 
 **Personas**
 
@@ -30,7 +30,7 @@
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
 4. **Run history.** Every comparison is saved and has its own page with the answers, the judge and the metrics.
 
-One prompt is still an anecdote. Running a model set over the user's own prompt set (batch evals) is the obvious next step. It was built and then deliberately cut to keep the PoC small enough to defend line by line; see [DECISIONS.md](DECISIONS.md) and the [roadmap](ROADMAP.md).
+One prompt is still an anecdote. Running a model set over the user's own prompt set (batch evals) is the obvious next step. It needs durable background jobs, so it is the first item of roadmap phase 2; see [DECISIONS.md](DECISIONS.md) and the [roadmap](ROADMAP.md).
 
 Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-compatible, `https://inference.do-ai.run/v1`, model access key), compute on **App Platform**, state in **Managed Postgres**.
 
@@ -72,7 +72,7 @@ Splitting `llm` and `ratelimit` out of the web app keeps them testable on their 
 
 ## 3. Interactive path: `POST /api/compare`
 
-Pages: `/` is the Compare setup form (with "Past runs" in a drawer); `/compare` redirects there for old links; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/?from=:id` with the form filled in.
+Pages: `/` is the Compare setup form (with "Past runs" in a drawer); `/compare` redirects there; `/runs/:id` shows one run, with the answers side by side and three more tabs: Decision (verdict, recommendation, synthesis), Evidence (scores per criterion in both orders, word counts) and Cost and speed. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/?from=:id` with the form filled in.
 
 ```mermaid
 sequenceDiagram
@@ -139,7 +139,7 @@ Embedding-similarity consensus was considered and rejected: cheap, but agreement
 
 ### Recommendation: from scores to a decision
 
-`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer in judge points ("1 point below, at 1/10th of the cost"); a ratio like "65% as good" read like a benchmark result, so it was dropped. **Quality guard:** unless the priority weighs cost above quality, the pick may not score 2+ points below the best answer. Without it, a 6x price gap on a fraction of a cent outvoted an answer that broke the prompt's "JSON only" rule. The run page states the verdict's confidence too: "Clear" only when both judge orders agree and the lead is over 1 point. Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one; running the same models over many prompts is the batch-eval roadmap item.
+`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer in judge points ("1 point below, at 1/10th of the cost"); points, not a ratio like "65% as good", which would read like a benchmark result. **Quality guard:** unless the priority weighs cost above quality, the pick may not score 2+ points below the best answer. Without it, a 6x price gap on a fraction of a cent outvoted an answer that broke the prompt's "JSON only" rule. The run page states the verdict's confidence too: "Clear" only when both judge orders agree and the lead is over 1 point. Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one; running the same models over many prompts is the batch-eval roadmap item.
 
 ### Run metrics: what we measure, and how
 
@@ -240,7 +240,7 @@ So the budget is **per (access key, model)**, not per account, and the right num
 1. **One bucket per (key, model).** Bucket name `gradient:<sha256(key)[:10]>:<model>`: two keys never share a budget, and the key itself is never stored. (`RATE_LIMIT_BUCKET=account` collapses to one bucket per key for providers that limit per account.)
 2. **Learn limits from headers.** The provider parses the headers on every response (and on 429 errors) and the gateway calls `limiter.observe()`. Learned limits replace the configured fallback (`RATE_LIMIT_RPM`/`TPM`, used until the first response) at 90% (`LEARNED_SAFETY`), and expire after an hour without a fresh header. If a header says a counter is at **0 remaining** (per minute or per day), the bucket is put into cooldown until that counter's reset, instead of collecting 429s.
 3. **Reserve the worst case, then reconcile.** A lease reserves 1 request and *prompt estimate + `maxTokens`* tokens inside a sliding 60 s window, plus an in-flight slot (with a TTL, so a crashed caller can't hold it). The TTL is at least the caller's attempt timeout plus 30 s (`holdMs` on `acquire`), so a slow but healthy call never loses its slot mid-call; only a crashed caller's lease expires. The prompt is counted with tiktoken's o200k tokenizer (`js-tiktoken`, pure JS): exact for gpt-oss, and unlike "4 characters per token" it sees that code and non-English text use more tokens per character (a line of code: 27 tokens, not 12; a Chinese sentence: 14, not 5). The other families (DeepSeek, Mistral, GLM, Kimi, Llama) have their own tokenizers, so the count is scaled per model by a learned correction: every reported usage updates a moving average of actual / counted input tokens (`TokenCalibration`, clamped to 0.5-3x). On completion the estimate is replaced with the real usage, which returns unused budget. Failed attempts are charged 0 tokens for a 429/4xx (rejected before generation) and the full reservation for timeouts/5xx (unknown, so we over-count, the safe direction).
-4. **AIMD when the limits are wrong.** Each bucket has a factor (starts at 1) that scales all its limits. A real 429 halves it (multiplicative decrease, floor 0.1); each finished call adds 0.05 (additive increase). Parallel 429s from one burst count once (a 5 s debounce), and a cooldown *predicted* from the headers ("0 left until the reset") does not halve it, because the limit is known and only this window is spent. An earlier version halved twice per burst, which the stress test caught. This finds the real capacity when another app shares the key or the provider changes limits without saying so. The 429 also sets a **shared cooldown** until the reset, so every instance backs off, not just the one that got it.
+4. **AIMD when the limits are wrong.** Each bucket has a factor (starts at 1) that scales all its limits. A real 429 halves it (multiplicative decrease, floor 0.1); each finished call adds 0.05 (additive increase). Parallel 429s from one burst count once (a 5 s debounce), and a cooldown *predicted* from the headers ("0 left until the reset") does not halve it, because the limit is known and only this window is spent. This finds the real capacity when another app shares the key or the provider changes limits without saying so. The 429 also sets a **shared cooldown** until the reset, so every instance backs off, not just the one that got it.
 5. **Waiting.** With no capacity, the caller sleeps (with jitter) until the oldest lease leaves the window, up to its wait budget (5 min for compare; the run carries on even if the tab is closed). The UI shows "waiting for capacity".
 
 Because every web instance leases from the same store, the *whole system* stays under the limits. Per-process limiters would each think they had the full budget.
@@ -287,7 +287,7 @@ After this test the compare wait budget went from 15 s to 5 minutes (6 attempts,
 | Learned limits + AIMD factor | Per process | Per process |
 | Good for | Several web instances sharing one budget, with no extra infrastructure | Unit tests, one process |
 
-Postgres is already there for app data, and at tens of calls per second a 1-3 ms transaction is negligible next to a multi-second model call. **Why not Valkey (DO Managed Caching)?** It is the better store at high call rates (one atomic Lua script per acquire, keys that expire on their own, learned limits shared across instances), and an earlier version of this repo had one. It was removed: the live app never used it (the account is at its database cluster limit), and an unused store is code to maintain and defend for no benefit. Adding it back is one more `LeaseStore` implementation behind the same contract tests.
+Postgres is already there for app data, and at tens of calls per second a 1-3 ms transaction is negligible next to a multi-second model call. **Why not Valkey (DO Managed Caching)?** It is the better store at high call rates (one atomic Lua script per acquire, keys that expire on their own, learned limits shared across instances), but the live load doesn't need it yet, and it would be one more managed service to run and secure. It slots in as one more `LeaseStore` implementation behind the same contract tests.
 
 ## 5. API design
 
@@ -317,7 +317,7 @@ Postgres is already there for app data, and at tens of calls per second a 1-3 ms
 
 `Comparison` → `CompareResult` (one per model), `Judgement`, `Vote`. `rate_lease` and `rate_cooldown` back the Postgres lease store; `rate_event` records its decisions (see section 4).
 
-Metrics are stored per call, so a future per-dataset report (batch evals) can compute averages, win rates and error rates from them. There is no cross-run leaderboard: scores from unrelated prompts don't average into anything meaningful (see DECISIONS.md).
+Metrics are stored per call, so a future per-dataset report (batch evals) can compute averages, win rates and error rates from them. Rankings belong to one dataset whose prompts share expectations, not to an average over unrelated prompts (see the roadmap).
 
 ## 7. Deployment on App Platform
 
@@ -343,7 +343,7 @@ Operational notes: each instance opens a Prisma pool. Small managed Postgres pla
 | Operations | Nothing to patch; logs and metrics built in. | Node upgrades, ingress, cert renewals, observability are ours. |
 | Flexibility | No sidecars, no custom autoscaling signals, no GPU, per-component sizes only. | Anything Kubernetes can do: HPA on queue depth, sidecars (OTel collector), co-located self-hosted models or observability (Langfuse/SigNoz). |
 
-App Platform is the right call for the PoC and for a first production version. Move to DOKS when one of these becomes true: a background worker (batch evals) needs to autoscale on queue depth, we self-host something next to the app (observability stack, a reranker, a small fine-tuned model on GPU nodes), or several services share one cluster. We briefly provisioned a cluster and deleted it unused, and a Helm chart for it was removed from the repo too: for one app, the extra moving parts bought nothing yet, and an untested chart is not a migration path.
+App Platform is the right call for the PoC and for a first production version. Move to DOKS when one of these becomes true: a background worker (batch evals) needs to autoscale on queue depth, we self-host something next to the app (observability stack, a reranker, a small fine-tuned model on GPU nodes), or several services share one cluster. For one app, a cluster and a Helm chart add moving parts without adding anything yet.
 
 ## 8. Technology choices and tradeoffs
 

@@ -54,8 +54,7 @@ describe("runJudge (mock provider)", () => {
 
 describe("judge rubric", () => {
   it("asks the judge to hold answers to the format the prompt asks for", async () => {
-    // Replaced the per-task focus (e.g. "Extraction / JSON"): in a live test the plain rubric with this
-    // rule picked the same winner on an extraction prompt, and a wrongly chosen task type can't skew it.
+    // The judge reads the prompt itself, so one general rule covers format-sensitive prompts (e.g. "JSON only").
     const { JUDGE_SYSTEM_PROMPT, buildJudgePrompt } = await import("../src/judge");
     expect(JUDGE_SYSTEM_PROMPT).toMatch(/specific format .* weigh following it exactly/);
     expect(buildJudgePrompt("q", [{ label: "A", output: "42" }])).toMatch(/^## User prompt/);
