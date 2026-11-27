@@ -46,9 +46,9 @@ The OpenAI SDK pointed at `https://inference.do-ai.run/v1`. Turns SDK errors int
 
 ## 7. The combined view: `packages/llm/src/judge.ts`, `synthesis.ts`, `checks.ts`
 
-The judge shuffles the answers, labels them A/B/C, picks a judge model that isn't competing, asks for strict JSON, validates it with zod, re-asks once on bad JSON, and maps labels back to models. Synthesis merges the answers with `[Model]` citations. Checks are deterministic (matches the reference answer, valid JSON).
+The judge shuffles the answers, labels them A/B/C, and picks a judge model that isn't competing. It judges twice, in parallel: once in that order and once reversed (`runJudge` → `judgeOnce` ×2 → `combineOrders`). Each call asks for strict JSON, validates it with zod, re-asks once on bad JSON, and maps labels back to models. `combineOrders` averages the scores, and turns a disagreement on the winner into a tie. In batch evals the judge also gets the reference answer and each answer's check results. Synthesis merges the answers with `[Model]` citations. Checks are deterministic (matches the reference answer, valid JSON).
 
-- **Expect:** "How do you know the judge is right?" You don't, fully. Bias mitigations are in ARCHITECTURE §3. Checks run beside the judge, and human votes are stored to measure agreement, which isn't measured yet (see DECISIONS).
+- **Expect:** "How do you know the judge is right?" You don't, fully. Each guard maps to a paper (DECISIONS, "How the judge is built"). "Why not two judge models?" It costs the same again; a panel of judges is on the roadmap. Checks run beside the judge, and human votes are stored to measure agreement, which isn't measured yet (see DECISIONS).
 
 ## 8. From scores to a decision: `apps/web/lib/recommend.ts` and `advisor-rank.ts`
 

@@ -245,7 +245,7 @@ export function RunView({ id }: { id: string }) {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <SynthesisCard synthesis={state.synthesis} label={label} />
-        <JudgePanel judge={state.judge} label={label} />
+        <JudgePanel judge={state.judge} label={label} outputs={state.panels} />
       </div>
 
       <RunHistory open={historyOpen} onOpenChange={setHistoryOpen} currentId={id} label={label} />

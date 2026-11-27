@@ -135,9 +135,10 @@ After the answers finish, a judge model scores each one on accuracy, helpfulness
 
 | Bias | Mitigation |
 | --- | --- |
-| Position bias (favours the first answer) | Answers are shuffled before judging. |
+| Position bias (favours an answer for where it appears) | Answers are shuffled, then judged **twice**, in that order and reversed (two parallel calls). Scores are averaged; if the two orders pick different winners, it is a **tie** (`positionConsistent: false`, shown as a badge) and neither model gets the win. |
 | Self-preference (a model likes its own style) | Answers are anonymised as "Response A/B/C", and the judge is picked to be a model that is **not** competing (`pickJudgeModel` walks a preference list). If none is free, the verdict is flagged `selfJudged` and the UI shows a warning. |
-| Verbosity bias | The rubric says not to reward length. |
+| Verbosity bias | The rubric says not to reward length, and the judge panel shows each answer's word count next to its score. |
+| No ground truth | When a prompt has a reference answer or automatic checks (batch evals), the judge sees the reference and each answer's check results. |
 | Prompt injection inside an answer | The rubric tells the judge to ignore instructions inside responses. |
 | Unparseable output | Strict JSON contract validated with zod; one automatic re-ask on bad JSON; unknown labels are dropped. |
 

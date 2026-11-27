@@ -76,7 +76,7 @@ describe("restoreCompareState", () => {
     synthesis: "merged",
     synthesisModel: "j",
     results: [result("a"), result("b", { status: "FAILED", problem: { type: "x", title: "boom", status: 502 } })],
-    judgement: { judgeModel: "j", selfJudged: false, winnerModel: "a", rationale: "r", scores: [], latencyMs: 5, costUsd: null },
+    judgement: { judgeModel: "j", selfJudged: false, winnerModel: "a", rationale: "r", scores: [], latencyMs: 5, costUsd: null, orders: 2, positionConsistent: true },
     vote: null,
   };
 

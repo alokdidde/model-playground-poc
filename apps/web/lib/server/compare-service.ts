@@ -233,6 +233,8 @@ async function runJudgeStep(
         scores: verdict.scores as object[],
         latencyMs: verdict.metrics.latencyMs,
         costUsd: verdict.metrics.costUsd,
+        orders: verdict.orders ?? 1,
+        positionConsistent: verdict.positionConsistent ?? null,
       },
     });
     emit({ type: "judge.completed", verdict });

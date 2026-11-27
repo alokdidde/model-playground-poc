@@ -101,6 +101,10 @@ model Judgement {
   scores       Json
   latencyMs    Int
   costUsd      Float?
+  /// How many answer orders the judge scored (2 = forward and reversed).
+  orders       Int        @default(1)
+  /// Both orders picked the same winner; false = position flip, counted as a tie.
+  positionConsistent Boolean?
   createdAt    DateTime   @default(now())
 }
 
@@ -155,6 +159,8 @@ model EvalPrompt {
   expected      String?
   winnerModel   String?
   judgeRationale String?
+  /// Both judge orders picked the same winner; false = position flip, counted as a tie.
+  positionConsistent Boolean?
   judgedAt      DateTime?
 
   @@unique([runId, index])
