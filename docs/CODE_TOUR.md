@@ -50,11 +50,11 @@ The judge shuffles the answers, labels them A/B/C, and picks a judge model that 
 
 - **Expect:** "How do you know the judge is right?" You don't, fully. Each guard maps to a paper (DECISIONS, "How the judge is built"). "Why not two judge models?" It costs the same again; a panel of judges is on the roadmap. Human votes are stored to measure agreement, which isn't measured yet (see DECISIONS).
 
-## 8. From scores to a decision: `apps/web/lib/recommend.ts` and `advisor-rank.ts`
+## 8. From scores to a decision: `apps/web/lib/recommend.ts`
 
-Pure functions. Each model gets quality (judge / 10), cost (cheapest / this) and speed (fastest / this) scores. The user's priority sets the weights, and the highest weighted sum wins. Help me choose ranks the leaderboard with the same function.
+Pure functions. Each model gets quality (judge / 10), cost (cheapest / this) and speed (fastest / this) scores. The user's priority sets the weights, and the highest weighted sum wins. Sorting answers on the run page uses the same function.
 
-- **Design choice:** the LLM writes the words and the code makes the decision, so the advisor can't invent benchmarks.
+- **Design choice:** the judge supplies scores and the code makes the decision, so the recommendation is reproducible from the stored numbers.
 
 ## 9. Staying under DO's limits: `packages/ratelimit/src/policy.ts`, `postgres-store.ts`, `rate-limiter.ts`
 

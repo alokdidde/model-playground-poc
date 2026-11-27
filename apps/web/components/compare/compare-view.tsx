@@ -42,8 +42,7 @@ export function CompareView() {
   const [customPriority, setCustomPriority] = useState(false);
 
   // ?from=<id> fills the form from an earlier run ("Edit and rerun"); ?run=<id> is an old link to a run;
-  // ?history=1 opens the list of past runs. Otherwise the form can be prefilled from a link,
-  // e.g. "Compare the top 3" on Help me choose: ?models=a,b&prompt=...&task=coding&priority=q,c,s
+  // ?history=1 opens the list of past runs.
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const runId = q.get("run");
@@ -51,17 +50,6 @@ export function CompareView() {
     const from = q.get("from");
     if (from) return void prefillFrom(from);
     if (q.get("history")) setHistoryOpen(true);
-    const models = q.get("models")?.split(",").filter(Boolean);
-    if (models?.length) setSelected(models.map(newSelection));
-    const p = q.get("prompt");
-    if (p) setPrompt(p);
-    const task = q.get("task");
-    if (task && (TASK_TYPE_IDS as readonly string[]).includes(task)) setTaskType(task as TaskType);
-    const [quality, cost, speed] = (q.get("priority") ?? "").split(",").map(Number);
-    if ([quality, cost, speed].every((n) => n !== undefined && Number.isFinite(n) && n >= 0 && n <= 1) && quality! + cost! + speed! > 0) {
-      setPriority({ quality: quality!, cost: cost!, speed: speed! });
-      setCustomPriority(true);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
   }, []);
 

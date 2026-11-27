@@ -27,7 +27,8 @@ DO earns money when customers send inference traffic through DO and keep it ther
 
 - Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
 - Combined view: LLM-as-judge scores (shuffled, anonymised, neutral judge), a synthesized answer with per-model citations, and a cost/quality/speed recommendation; thumbs up/down and votes.
-- A leaderboard from every compare, and Help me choose (plain words in, a shortlist ranked from measured runs out).
+- A leaderboard from every compare.
+- Built and cut: Help me choose, a plain-language advisor. Cut because the brief doesn't ask for an assistant; it returns below as the first step of the agentic assistant.
 - Shared, lease-based rate limiting so the whole system stays inside the account's limits, with every limiter and retry decision recorded and drawn as a timeline (`/ops/rate-limits`).
 - Built and cut: durable batch evals (DBOS worker). Cut to keep the PoC small enough to defend line by line; the design notes carry into phase 2.
 
@@ -64,7 +65,7 @@ Goal: the customer stops picking models by hand. *Size: the phase 2 team plus an
 - **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
 - **Council / ensemble mode**: the PoC's synthesizer, promoted to an API: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
 
-- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. "Help me choose" is the first step: it already turns plain words into a task type, weights and sample prompts, and ranks from measured data. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
+- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. The first step is a non-agentic "Help me choose" (built once, then cut from the PoC): an LLM turns plain words into a task type, quality/cost/speed weights and sample prompts, our code ranks models from measured leaderboard data, and the LLM explains that ranking using only those numbers, then opens Compare prefilled. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
 
 ## Phase 4: Make a better model (longer term)
 

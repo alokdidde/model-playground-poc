@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Columns3, Crown, History, Sparkles, Trophy } from "lucide-react";
+import { ArrowRight, Columns3, Crown, History, Trophy } from "lucide-react";
 import { describeModel } from "@fomo/llm";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 const label = (id: string) => describeModel(id).label;
 
-/** Two ways in: compare models yourself, or describe the use case and get suggestions. Plus the latest runs. */
+/** One way in (start a compare), plus the latest runs. */
 export default async function HomePage() {
   // The home page must still render if the database is briefly unavailable.
   const recent = await listComparisons(5).catch(() => null);
@@ -22,22 +22,18 @@ export default async function HomePage() {
         <p className="text-muted-foreground mt-1">Try the models on DigitalOcean side by side and see which one is worth it for your work.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <EntryCard
-          href="/compare"
-          icon={<Columns3 className="size-5" />}
-          title="Compare models yourself"
-          body="Pick the models, write a prompt, and see the answers side by side with a judge's score, speed and cost."
-          cta="Start a compare"
-        />
-        <EntryCard
-          href="/choose"
-          icon={<Sparkles className="size-5" />}
-          title="Help me choose"
-          body="Describe what you're building in plain words. We suggest models and settings from measured results, then you compare them."
-          cta="Describe my use case"
-        />
-      </div>
+      <Link href="/compare" className="group block">
+        <Card className="hover:border-primary/60 flex-row items-center gap-4 p-5 transition-colors">
+          <span className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-lg">
+            <Columns3 className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">Start a compare</h2>
+            <p className="text-muted-foreground text-sm">Pick the models, write a prompt, and see the answers side by side with a judge&apos;s score, speed and cost.</p>
+          </div>
+          <ArrowRight className="text-primary size-5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+        </Card>
+      </Link>
 
       <section className="space-y-3">
         <div className="flex items-center gap-2">
@@ -84,20 +80,5 @@ export default async function HomePage() {
         </Link>
       </div>
     </div>
-  );
-}
-
-function EntryCard({ href, icon, title, body, cta }: { href: string; icon: React.ReactNode; title: string; body: string; cta: string }) {
-  return (
-    <Link href={href} className="group">
-      <Card className="hover:border-primary/60 h-full gap-3 p-5 transition-colors">
-        <span className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-lg">{icon}</span>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <p className="text-muted-foreground flex-1 text-sm">{body}</p>
-        <span className="text-primary flex items-center gap-1 text-sm font-medium">
-          {cta} <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-        </span>
-      </Card>
-    </Link>
   );
 }

@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/compare", label: "Compare" },
-  { href: "/choose", label: "Help me choose" },
   { href: "/leaderboard", label: "Leaderboard" },
   { href: "/ops/rate-limits", label: "Rate limits" },
 ];
