@@ -126,6 +126,7 @@ After the answers finish, a judge model scores each one on accuracy, helpfulness
 | Verbosity bias | The rubric says not to reward length, and the judge panel shows each answer's word count next to its score. |
 | No ground truth | None for an open prompt. The judge is presented as a second opinion, and human votes are stored next to it to measure agreement. |
 | Prompt injection inside an answer | The rubric tells the judge to ignore instructions inside responses. |
+| Ignoring the requested format | The rubric tells the judge to weigh following a format the prompt asks for (JSON only, a word limit, a number of sentences) exactly. This replaced per-task judge hints; see DECISIONS.md. |
 | Unparseable output | Strict JSON contract validated with zod; one automatic re-ask on bad JSON; unknown labels are dropped. |
 
 The judge is a second opinion, not ground truth, and the UI says so. Human votes (`PUT /api/compare/:id/vote`) are stored next to the judge's verdict. They measure judge/human agreement and are the seed data for the "learn from preferences" roadmap item.

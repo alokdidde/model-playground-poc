@@ -101,7 +101,6 @@ export interface SavedComparison {
   prompt: string;
   systemPrompt: string | null;
   models: string[];
-  taskType: string;
   priority: { quality: number; cost: number; speed: number } | null;
   status: RunStatus;
   createdAt: string;

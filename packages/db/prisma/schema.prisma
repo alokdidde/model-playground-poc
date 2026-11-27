@@ -37,6 +37,7 @@ model Comparison {
   maxTokens      Int
   temperature    Float
   /// general | coding | reasoning | writing | summarization | extraction | chat
+  /// No longer set: task types were removed on 2026-11-27. Kept so old rows need no migration.
   taskType       String          @default("general")
   /// The user's stated {quality, cost, speed} weights, if any
   priority       Json?

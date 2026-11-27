@@ -1,4 +1,4 @@
-import type { CallMetrics, JudgeScore, PriorityWeights, TaskType } from "@fomo/shared";
+import type { CallMetrics, JudgeScore, PriorityWeights } from "@fomo/shared";
 
 /**
  * Turns the judge's scores plus cost and latency into one recommendation:
@@ -19,21 +19,6 @@ export const PRIORITY_WEIGHTS: Record<Priority, PriorityWeights> = {
   balanced: { quality: 0.6, cost: 0.25, speed: 0.15 },
   cost: { quality: 0.4, cost: 0.6, speed: 0 },
   speed: { quality: 0.4, cost: 0, speed: 0.6 },
-};
-
-/**
- * A sensible starting priority per task type; the user can always change it.
- * Code and maths need the right answer; extraction and summaries are
- * high-volume, so cost matters; chat is latency-sensitive.
- */
-export const TASK_DEFAULT_PRIORITY: Record<TaskType, Priority> = {
-  general: "balanced",
-  coding: "quality",
-  reasoning: "quality",
-  writing: "balanced",
-  summarization: "cost",
-  extraction: "cost",
-  chat: "speed",
 };
 
 /** The preset these weights match, or null for custom weights. */
