@@ -107,59 +107,11 @@ export const IdParamsSchema = z.object({
   id: z.string().min(1).max(64),
 });
 
-// ---------------------------------------------------------------------------
-// Batch evals
-// ---------------------------------------------------------------------------
-
-export const CreateEvalRunSchema = z
-  .object({
-  name: z.string().trim().min(1).max(120),
-  models: z
-    .array(modelId)
-    .min(1)
-    .max(LIMITS.maxModelsPerCompare)
-    .refine((ids) => new Set(ids).size === ids.length, "Models must be unique"),
-  prompts: z
-    .array(
-      z.object({
-        prompt: z.string().trim().min(1).max(LIMITS.maxPromptChars),
-        /** Optional reference answer, shown to the judge. */
-        expected: z.string().trim().max(LIMITS.maxPromptChars).optional(),
-      }),
-    )
-    .min(1)
-    .max(LIMITS.maxEvalPrompts),
-  judgeModel: modelId.optional(),
-  // Reasoning models spend part of this budget thinking, so 512 is too tight.
-  maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(2048),
-  taskType: TaskTypeSchema.default("general"),
-  priority: PriorityWeightsSchema.optional(),
-  /** Same per-model settings as compare; keys must be in `models`. */
-  modelSettings: z.record(modelId, ModelSettingsSchema).default({}),
-  /** The comparison this run validates ("Validate on my prompts"), if any. */
-  sourceComparisonId: z.string().min(1).max(64).optional(),
-})
-  .superRefine((req, ctx) => {
-    for (const id of Object.keys(req.modelSettings)) {
-      if (!req.models.includes(id)) {
-        ctx.addIssue({ code: "custom", path: ["modelSettings", id], message: "Settings given for a model that is not in `models`" });
-      }
-    }
-  });
-
-export type CreateEvalRun = z.infer<typeof CreateEvalRunSchema>;
-export type CreateEvalRunInput = z.input<typeof CreateEvalRunSchema>;
-
 /** "Help me choose": a use case in plain words. */
 export const AdvisorRequestSchema = z.object({
   query: z.string().trim().min(10, "Describe your use case in a sentence or two").max(2_000),
 });
 export type AdvisorRequest = z.infer<typeof AdvisorRequestSchema>;
-
-export const ListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().max(64).optional(),
-});
 
 /** GET /api/compare: past comparisons, newest first. `before` is the last id of the previous page. */
 export const CompareListQuerySchema = z.object({
@@ -168,7 +120,6 @@ export const CompareListQuerySchema = z.object({
 });
 
 export const LeaderboardQuerySchema = z.object({
-  source: z.enum(["all", "evals", "compare"]).default("all"),
   taskType: TaskTypeSchema.optional(),
 });
 
@@ -252,3 +203,13 @@ export interface JudgeVerdict {
 }
 
 export type RunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED";
+
+// ---------------------------------------------------------------------------
+// Ops: rate-limit events (see packages/ratelimit/src/events.ts)
+// ---------------------------------------------------------------------------
+
+export const RateEventsQuerySchema = z.object({
+  minutes: z.coerce.number().int().min(1).max(7 * 24 * 60).default(30),
+  tag: z.string().max(100).optional(),
+  model: z.string().max(200).optional(),
+});

@@ -20,7 +20,7 @@ export class UpstreamError extends Error {
   constructor(
     readonly kind: UpstreamErrorKind,
     message: string,
-    readonly options: { status?: number; retryAfterMs?: number; cause?: unknown; rateLimits?: ObservedLimits } = {},
+    readonly options: { status?: number; retryAfterMs?: number; cause?: unknown; rateLimits?: ObservedLimits; requestId?: string } = {},
   ) {
     super(message, { cause: options.cause });
     this.name = "UpstreamError";
@@ -46,10 +46,10 @@ export class UpstreamError extends Error {
     return true; // timeouts and network errors
   }
 
-  static fromStatus(status: number, message: string, retryAfterMs?: number, cause?: unknown, rateLimits?: ObservedLimits): UpstreamError {
+  static fromStatus(status: number, message: string, retryAfterMs?: number, cause?: unknown, rateLimits?: ObservedLimits, requestId?: string): UpstreamError {
     const kind: UpstreamErrorKind =
       status === 429 ? "rate_limited" : status === 408 ? "timeout" : status >= 500 ? "server" : "client";
-    return new UpstreamError(kind, message, { status, retryAfterMs, cause, rateLimits });
+    return new UpstreamError(kind, message, { status, retryAfterMs, cause, rateLimits, requestId });
   }
 }
 

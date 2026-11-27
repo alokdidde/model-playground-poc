@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   // Our workspace packages ship TypeScript source; Next compiles them.
   transpilePackages: ["@fomo/shared", "@fomo/llm", "@fomo/ratelimit", "@fomo/db"],
   // Server-only packages with native or dynamic requires stay external.
-  serverExternalPackages: ["@dbos-inc/dbos-sdk", "@prisma/client", "pg"],
+  serverExternalPackages: ["@prisma/client"],
 };
 
 export default nextConfig;

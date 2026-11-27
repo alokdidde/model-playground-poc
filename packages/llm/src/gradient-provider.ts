@@ -3,7 +3,7 @@ import { parseRateLimitHeaders } from "@fomo/ratelimit";
 import type { ModelInfo } from "@fomo/shared";
 import { describeModel } from "./catalog";
 import { parseRetryAfter, UpstreamError } from "./errors";
-import type { ChatProvider, ChatRequest, ChatResult, StreamChunk } from "./types";
+import type { ChatProvider, ChatRequest, ChatResult, ResponseMeta, StreamChunk } from "./types";
 
 export interface GradientConfig {
   baseUrl: string;
@@ -63,6 +63,7 @@ export class GradientProvider implements ChatProvider {
       }
       return {
         rateLimits: parseRateLimitHeaders((name) => raw.headers.get(name)),
+        meta: responseMeta((name) => raw.headers.get(name)),
         text: choice?.message?.content ?? "",
         usage: response.usage
           ? { inputTokens: response.usage.prompt_tokens, outputTokens: response.usage.completion_tokens }
@@ -89,6 +90,7 @@ export class GradientProvider implements ChatProvider {
         .withResponse();
       const limits = parseRateLimitHeaders((name) => raw.headers.get(name));
       if (limits) yield { type: "limits", limits };
+      yield { type: "meta", meta: responseMeta((name) => raw.headers.get(name)) };
       for await (const chunk of stream) {
         const choice = chunk.choices[0];
         const text = choice?.delta?.content;
@@ -107,6 +109,14 @@ export class GradientProvider implements ChatProvider {
       throw toUpstreamError(error);
     }
   }
+}
+
+function responseMeta(get: (name: string) => string | null): ResponseMeta {
+  const upstream = Number(get("do-upstream-service-time"));
+  return {
+    requestId: get("x-request-id") ?? get("request-id") ?? undefined,
+    upstreamMs: Number.isFinite(upstream) && get("do-upstream-service-time") ? upstream : undefined,
+  };
 }
 
 function hasReasoning(delta: unknown): boolean {
@@ -138,7 +148,7 @@ function toUpstreamError(error: unknown): unknown {
     const header = (name: string) => error.headers?.get(name);
     const retryAfterMs = error.headers ? parseRetryAfter(header) : undefined;
     const rateLimits = error.headers ? parseRateLimitHeaders(header) : undefined;
-    return UpstreamError.fromStatus(error.status, error.message, retryAfterMs, error, rateLimits);
+    return UpstreamError.fromStatus(error.status, error.message, retryAfterMs, error, rateLimits, error.headers ? header("x-request-id") ?? undefined : undefined);
   }
   return error;
 }

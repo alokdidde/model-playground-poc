@@ -14,7 +14,6 @@ import { ModelPanel, type Rating } from "@/components/compare/model-panel";
 import { RecommendationCard } from "@/components/compare/recommendation-card";
 import { RunHistory } from "@/components/compare/run-history";
 import { SynthesisCard } from "@/components/compare/synthesis-card";
-import { ValidateDrawer } from "@/components/compare/validate-drawer";
 import { fetchJson, ProblemError } from "@/lib/api-client";
 import { restoreCompareState, type SavedComparison } from "@/lib/compare-state";
 import { getLiveRun, subscribeLiveRuns } from "@/lib/live-run";
@@ -101,7 +100,6 @@ export function RunView({ id }: { id: string }) {
   // The recommendation's weights start from the run's and can be changed here to see "what if".
   const [priorityOverride, setPriorityOverride] = useState<PriorityWeights | null>(null);
   const [customPriority, setCustomPriority] = useState(false);
-  const [validateOpen, setValidateOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showFullPrompt, setShowFullPrompt] = useState(false);
 
@@ -135,8 +133,6 @@ export function RunView({ id }: { id: string }) {
   const metricRows = state.order.flatMap((m) => (metrics[m] ? [{ model: m, metrics: metrics[m]! }] : []));
   // Only once every model is done, so a model that finishes early is not shown as "best" too soon.
   const wins = finished ? winsByModel(metricRows) : new Map<string, Set<MetricKey>>();
-  const costs = Object.values(metrics).map((m) => m?.costUsd);
-  const costPerPrompt = costs.length && costs.every((c) => typeof c === "number") ? (costs as number[]).reduce((a, b) => a + b, 0) : null;
   const answered = state.order.filter((m) => ["done", "failed"].includes(state.panels[m]?.status ?? "")).length;
   const longPrompt = info.prompt.length > 280 || info.prompt.split("\n").length > 5;
 
@@ -190,6 +186,9 @@ export function RunView({ id }: { id: string }) {
               <Pencil /> Edit and rerun
             </Link>
           </Button>
+          <Link href={`/ops/rate-limits?tag=${encodeURIComponent(id)}`} className="text-muted-foreground hover:text-foreground text-sm underline">
+            Rate-limit timeline
+          </Link>
           {running && (
             <span className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loader2 className="size-4 animate-spin" />
@@ -215,7 +214,6 @@ export function RunView({ id }: { id: string }) {
           customPriority={customPriority}
           onCustomPriorityChange={setCustomPriority}
           taskLabel={TASK_TYPES[info.taskType].label}
-          onValidate={finished ? () => setValidateOpen(true) : undefined}
         />
       )}
 
@@ -250,23 +248,6 @@ export function RunView({ id }: { id: string }) {
 
       <RunHistory open={historyOpen} onOpenChange={setHistoryOpen} currentId={id} label={label} />
 
-      <ValidateDrawer
-        open={validateOpen}
-        onOpenChange={setValidateOpen}
-        comparisonId={id}
-        firstPrompt={info.prompt}
-        models={state.order}
-        modelSettings={Object.fromEntries(
-          // Evals have no shared system prompt, so carry it into each model's settings.
-          state.order.map((m) => {
-            const s = info.modelSettings[m] ?? {};
-            return [m, info.systemPrompt && !s.systemPrompt ? { ...s, systemPrompt: info.systemPrompt } : s];
-          }),
-        )}
-        taskType={info.taskType}
-        priority={priority}
-        costPerPrompt={costPerPrompt}
-      />
     </div>
   );
 }

@@ -42,10 +42,10 @@ export async function adviseModels(query: string, signal: AbortSignal): Promise<
   try {
     const intent = await parseUseCase(gateway, query, assistantModel, callOptions);
 
-    let rows = withData(await getLeaderboard("all", intent.taskType));
+    let rows = withData(await getLeaderboard(intent.taskType));
     let basis = `${TASK_TYPES[intent.taskType].label} runs`;
     if (rows.length < MIN_MODELS_WITH_DATA) {
-      rows = withData(await getLeaderboard("all"));
+      rows = withData(await getLeaderboard());
       basis = `all runs (not enough ${TASK_TYPES[intent.taskType].label.toLowerCase()} data yet)`;
     }
 

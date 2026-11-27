@@ -3,8 +3,8 @@ import { describeModel } from "./catalog";
 import type { ChatMessage, ChatRequest } from "./types";
 
 /**
- * The request actually sent to one model, shared by interactive compare and
- * batch evals: the model's own overrides first, then the caller's defaults.
+ * The request actually sent to one model in a compare: the model's own
+ * overrides first, then the caller's defaults.
  * Settings the model rejects (per the catalog) are left out so the provider
  * default applies, e.g. Kimi K2.6 only allows temperature 1.
  */

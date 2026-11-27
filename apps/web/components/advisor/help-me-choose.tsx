@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, FlaskConical, Loader2, MessageSquareText, Sparkles } from "lucide-react";
-import { TASK_TYPES, type CreateEvalRunInput } from "@fomo/shared";
+import { ArrowRight, Loader2, MessageSquareText, Sparkles } from "lucide-react";
+import { TASK_TYPES } from "@fomo/shared";
 import type { AdvisorResult } from "@/lib/server/advisor-service";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,6 @@ export function HelpMeChoose() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string>();
   const [result, setResult] = useState<AdvisorResult>();
 
@@ -64,31 +63,12 @@ export function HelpMeChoose() {
   // Ranked within-limits first, so the top 3 are the best fits plus, if needed, the closest alternatives.
   const top = result?.ranking.slice(0, 3).map((r) => r.model) ?? [];
 
-  async function validate() {
-    if (!result || top.length === 0) return;
-    setStarting(true);
-    const body: CreateEvalRunInput = {
-      name: `Help me choose: ${result.intent.summary.slice(0, 80)}`,
-      models: top,
-      prompts: result.intent.samplePrompts.map((prompt) => ({ prompt })),
-      taskType: result.intent.taskType,
-      priority: result.intent.priority,
-    };
-    try {
-      const run = await fetchJson<{ id: string }>("/api/evals", { method: "POST", body: JSON.stringify(body), idempotencyKey: crypto.randomUUID() });
-      router.push(`/evals/${run.id}`);
-    } catch (e) {
-      setError(e instanceof ProblemError ? `${e.problem.title}: ${e.problem.detail ?? ""}` : String(e));
-      setStarting(false);
-    }
-  }
-
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Help me choose a model</h1>
         <p className="text-muted-foreground mt-1">
-          Describe what you&apos;re building in plain words. We work out the task and what matters to you, then rank models using the scores, speed and cost measured in this app&apos;s compares and evals, not a
+          Describe what you&apos;re building in plain words. We work out the task and what matters to you, then rank models using the scores, speed and cost measured in this app&apos;s compares, not a
           model&apos;s opinion.
         </p>
       </div>
@@ -141,9 +121,6 @@ export function HelpMeChoose() {
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => router.push(compareUrl(result, top))}>
                   Compare the top {top.length} <ArrowRight />
-                </Button>
-                <Button variant="outline" onClick={validate} disabled={starting}>
-                  {starting ? <Loader2 className="animate-spin" /> : <FlaskConical />} Run an eval on {result.intent.samplePrompts.length} sample prompts
                 </Button>
               </div>
             )}

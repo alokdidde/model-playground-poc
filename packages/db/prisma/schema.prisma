@@ -1,5 +1,4 @@
-// Application data. DBOS keeps its own workflow checkpoints in a separate
-// system database (DBOS_SYSTEM_DATABASE_URL) on the same Postgres server.
+// Application data: comparisons, judgements, votes, the rate-limit lease store and its event log.
 
 generator client {
   provider      = "prisma-client-js"
@@ -119,90 +118,6 @@ model Vote {
 }
 
 // ---------------------------------------------------------------------------
-// Batch evals (executed by the DBOS worker)
-// ---------------------------------------------------------------------------
-
-model EvalRun {
-  id             String       @id @default(cuid())
-  name           String
-  models         String[]
-  judgeModel     String
-  maxTokens      Int
-  taskType       String       @default("general")
-  priority       Json?
-  /// Per-model settings, same shape as compare's `modelSettings`
-  modelSettings  Json?
-  /// The comparison this run validates, when started from "Validate on my prompts"
-  sourceComparisonId String?
-  status         RunStatus    @default(QUEUED)
-  /// The DBOS workflow id is the run id, so enqueueing twice is a no-op.
-  idempotencyKey String?      @unique
-  /// sha256 of the request body, to detect a key reused with a different payload.
-  requestHash    String?
-  totalCalls     Int
-  error          String?
-  createdAt      DateTime     @default(now())
-  startedAt      DateTime?
-  completedAt    DateTime?
-  prompts        EvalPrompt[]
-  results        EvalResult[]
-
-  @@index([createdAt])
-}
-
-model EvalPrompt {
-  id            String    @id @default(cuid())
-  runId         String
-  run           EvalRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
-  index         Int
-  prompt        String
-  expected      String?
-  winnerModel   String?
-  judgeRationale String?
-  /// Both judge orders picked the same winner; false = position flip, counted as a tie.
-  positionConsistent Boolean?
-  judgedAt      DateTime?
-
-  @@unique([runId, index])
-}
-
-model EvalResult {
-  id              String     @id @default(cuid())
-  runId           String
-  run             EvalRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
-  promptIndex     Int
-  model           String
-  status          CallStatus
-  output          String
-  problem         Json?
-  latencyMs       Int
-  ttftMs          Int?
-  outputTokensPerSec Float?
-  reasoned        Boolean?
-  inputTokens     Int
-  outputTokens    Int
-  tokensEstimated Boolean
-  costUsd         Float?
-  attempts        Int
-  /// Set when a reasoning model ran out of tokens and was retried with this bigger max_tokens
-  maxTokensRaisedTo Int?
-  /// Judge's overall score (1-10), filled in after the judge step.
-  score           Float?
-  /// Judge's per-criterion scores: { accuracy, helpfulness, clarity }
-  criteria        Json?
-  /// Automatic checks against the prompt's expectations: [{ name, passed, detail }]
-  checks          Json?
-  isWinner        Boolean    @default(false)
-  /// The settings actually sent to this model
-  settings        Json?
-  createdAt       DateTime   @default(now())
-
-  /// Natural key: makes the worker's write idempotent if a step is replayed.
-  @@unique([runId, promptIndex, model])
-  @@index([model])
-}
-
-// ---------------------------------------------------------------------------
 // Rate limiting: the Postgres lease store (see packages/ratelimit)
 // ---------------------------------------------------------------------------
 
@@ -228,4 +143,29 @@ model RateCooldown {
   until  DateTime
 
   @@map("rate_cooldown")
+}
+
+/// What the rate limiter and the gateway did, one row per event: leases granted
+/// and waited for, 429s, cooldowns, learned limits, AIMD factor changes, retries
+/// (with the backoff and jitter actually used) and attempt outcomes.
+/// Written in small batches by PostgresEventSink; /ops/rate-limits draws it as a timeline.
+model RateEvent {
+  id      BigInt   @id @default(autoincrement())
+  at      DateTime @default(now()) @db.Timestamptz(3)
+  /// web | script: which process emitted it
+  source  String
+  /// See RateEventKind in packages/ratelimit/src/events.ts
+  kind    String
+  model   String?
+  /// Correlates events with a run: the comparison id
+  tag     String?
+  attempt Int?
+  /// The headline duration for this kind: time waited, retry delay, cooldown length, latency
+  ms      Int?
+  /// Everything else (bucket levels, effective limits, headers, jitter parts)
+  data    Json?
+
+  @@index([at])
+  @@index([tag, at])
+  @@map("rate_event")
 }

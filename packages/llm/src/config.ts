@@ -25,8 +25,8 @@ export function createProviderFromEnv(): ChatProvider {
   });
 }
 
-export function createGatewayFromEnv(prisma: PrismaClient): ModelGateway {
-  return new ModelGateway(createProviderFromEnv(), createRateLimiterFromEnv(prisma));
+export function createGatewayFromEnv(prisma: PrismaClient, source = "app"): ModelGateway {
+  return new ModelGateway(createProviderFromEnv(), createRateLimiterFromEnv(prisma, source));
 }
 
 export function judgeConfigFromEnv(): { preferred: string; fallbacks: string[] } {

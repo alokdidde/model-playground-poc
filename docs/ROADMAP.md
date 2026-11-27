@@ -2,7 +2,7 @@
 
 The PoC answers "which of these models did best on *this* prompt?". If it gets traction, the real customer question becomes "**which model should I use for my workload, and how do I know it's still the right one?**". Comparing outputs by hand doesn't scale; the roadmap moves from *showing* answers, to *measuring* models on the customer's own data, to *choosing* the model automatically, and finally to *making* a better model.
 
-Each phase reuses what the previous one collected: comparisons, judge verdicts, human votes, eval results, cost and latency.
+Each phase reuses what the previous one collected: comparisons, judge verdicts, human votes, cost and latency.
 
 ## Why this matters to DigitalOcean
 
@@ -21,30 +21,31 @@ DO earns money when customers send inference traffic through DO and keep it ther
 
 ## The first thing to ship next
 
-**Judge/human agreement plus a cost estimate before each batch run.** Agreement tells us whether the combined view can be trusted, which everything after it depends on. A cost estimate removes the main reason a customer won't press "Run eval". Both are small (about a week) and use data and code that already exist.
+**Judge/human agreement, then batch evals.** Agreement tells us whether the combined view can be trusted, which everything after it depends on; it is small (days) and uses data that already exists. Batch evals (one model set over many prompts, with a cost estimate before the run) are the step after, and the first thing in phase 2.
 
 ## Phase 0: PoC (this repo)
 
 - Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
 - Combined view: LLM-as-judge scores (shuffled, anonymised, neutral judge), a synthesized answer with per-model citations, and a cost/quality/speed recommendation; thumbs up/down and votes.
-- Durable batch evals (DBOS) and a leaderboard.
-- Shared, lease-based rate limiting so the whole system stays inside the account's limits.
+- A leaderboard from every compare, and Help me choose (plain words in, a shortlist ranked from measured runs out).
+- Shared, lease-based rate limiting so the whole system stays inside the account's limits, with every limiter and retry decision recorded and drawn as a timeline (`/ops/rate-limits`).
+- Built and cut: durable batch evals (DBOS worker). Cut to keep the PoC small enough to defend line by line; the design notes carry into phase 2.
 
 ## Phase 1: Production-ready (weeks)
 
-Goal: something customers can use on their own account. *Size: 1 or 2 engineers, about 4 to 6 weeks. Main risk: per-customer limits and spend (a large batch eval on a customer's key can use up their quota).*
+Goal: something customers can use on their own account. *Size: 1 or 2 engineers, about 4 to 6 weeks. Main risk: per-customer limits and spend (many users on one customer's key can use up their quota).*
 
 - **Auth and tenancy**: DO account login (OAuth), per-team workspaces, each team's own model access key. The middleware hook and `principal` are already in place.
-- **Quotas and budgets**: per-team token budgets and spend caps on top of the lease store; show "this run will cost about $X" before starting a batch eval.
-- **Observability**: OpenTelemetry traces across web, worker and model calls (DBOS emits spans); dashboards for p50/p95 latency, error rate and 429 rate per model.
+- **Quotas and budgets**: per-team token budgets and spend caps on top of the lease store; show "this will cost about $X" before a large run.
+- **Observability**: OpenTelemetry traces across the web app and model calls, self-hosted on DO (Arize Phoenix on App Platform, or Langfuse/SigNoz on DOKS). The rate-limit events already recorded become one more exporter (`RateEventSink`). Alerts on 429 rate and capacity waits per model.
 - **Accurate tokens and prices**: per-family tokenizers, prices pulled from an API instead of a table, long-context price tiers.
-- **Shareable results**: permalinks to a comparison or eval run, export to CSV/JSON.
-- **Cheaper batch evals**: use DO's batch inference (up to 50% off for some models) for runs that don't need to finish in minutes.
+- **Shareable results**: permalinks to a comparison (already there), export to CSV/JSON.
 
 ## Phase 2: Evals on your own data (1-2 quarters)
 
 Goal: replace "vibes" with evidence on the customer's workload. *Size: a small team (3 or 4 engineers). Main risk: judge quality on specialised domains. Mitigated by calibration against human labels and deterministic checks.*
 
+- **Batch evals**: run a model set over many prompts as a durable background job (DBOS workflows in a worker on the same Postgres; a PoC version was built and cut, so the design is proven), with a cost estimate before the run, a report (scores, wins, p50/p95 latency, cost per prompt) and DO's batch inference (up to 50% off for some models) for runs that don't need to finish in minutes. Batch needs its own share of each model's rate limit so it never starves a person watching a compare.
 - **Datasets**: upload prompts (CSV/JSONL) with optional reference answers, or capture them from production traffic (opt-in, sampled, PII-scrubbed).
 - **Custom rubrics and graders**: per-dataset judge prompts, plus deterministic checks (JSON schema valid, regex, contains/doesn't contain, code compiles, exact match) mixed with LLM judges.
 - **Judge/human agreement from votes**: report how often the judge's winner matches the human "best answer" vote and thumbs, per task type, using the votes we already collect. Where agreement is low, re-weight or replace the judge for that task.
@@ -85,7 +86,7 @@ Goal: close the loop from preferences to a model tuned for the customer. *Size: 
 ## Technical evolution that supports this
 
 - **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (one more `LeaseStore` implementation behind the existing contract tests).
-- **Leaderboard → materialised views** refreshed by the worker; eventually a column store for analytics on millions of results.
+- **Leaderboard → materialised views** refreshed on a schedule; eventually a column store for analytics on millions of results.
 - **API → standalone gateway service** (the `llm` + `ratelimit` packages lift out unchanged) when the routing endpoint ships; at that point a Rust or Go proxy may be worth it for per-request overhead.
 - **App Platform → DOKS** when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
-- **DBOS → Temporal** only if orchestration needs outgrow a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.
+- **Batch work → DBOS, then Temporal** only if orchestration outgrows a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.

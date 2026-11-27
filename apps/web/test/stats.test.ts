@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ci95HalfWidth } from "../lib/stats";
+import { ci95HalfWidth, percentile } from "../lib/stats";
 
 describe("ci95HalfWidth", () => {
   it("is null with fewer than two samples", () => {
@@ -17,5 +17,13 @@ describe("ci95HalfWidth", () => {
     const small = ci95HalfWidth([6, 10, 6, 10])!;
     const large = ci95HalfWidth(Array.from({ length: 40 }, (_, i) => (i % 2 ? 10 : 6)))!;
     expect(large).toBeLessThan(small);
+  });
+});
+
+describe("percentile", () => {
+  it("uses nearest-rank percentiles", () => {
+    expect(percentile([5, 1, 3, 2, 4], 50)).toBe(3);
+    expect(percentile([1, 2, 3, 4, 100], 95)).toBe(100);
+    expect(percentile([], 50)).toBeNull();
   });
 });

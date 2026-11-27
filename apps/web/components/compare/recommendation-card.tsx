@@ -1,8 +1,7 @@
 "use client";
 
-import { FlaskConical, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import type { CallMetrics, JudgeVerdict, PriorityWeights } from "@fomo/shared";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { describeRecommendation, recommend } from "@/lib/recommend";
 import { formatMs, formatUsd } from "@/lib/utils";
@@ -18,7 +17,6 @@ export function RecommendationCard({
   customPriority,
   onCustomPriorityChange,
   taskLabel,
-  onValidate,
 }: {
   verdict: JudgeVerdict;
   metrics: Record<string, CallMetrics | undefined>;
@@ -28,8 +26,6 @@ export function RecommendationCard({
   customPriority: boolean;
   onCustomPriorityChange: (v: boolean) => void;
   taskLabel: string;
-  /** Opens "Validate on my prompts"; absent until the comparison is saved. */
-  onValidate?: () => void;
 }) {
   const candidates = verdict.scores.flatMap((score) => {
     const m = metrics[score.model];
@@ -58,11 +54,6 @@ export function RecommendationCard({
           Task: {taskLabel} · Judge score {pick.score.overall}/10 · {formatUsd(pick.metrics.costUsd)} · {formatMs(pick.metrics.latencyMs)}. Based on this one prompt, so
           check it on your own prompts before switching models in production.
         </p>
-        {onValidate && (
-          <Button variant="outline" size="sm" className="mt-3" onClick={onValidate}>
-            <FlaskConical /> Validate on my prompts
-          </Button>
-        )}
       </div>
     </Card>
   );
