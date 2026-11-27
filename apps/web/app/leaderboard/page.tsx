@@ -14,14 +14,14 @@ const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%
 export default async function LeaderboardPage({ searchParams }: { searchParams: Promise<{ task?: string }> }) {
   const { task } = await searchParams;
   const taskType = (TASK_TYPE_IDS as readonly string[]).includes(task ?? "") ? (task as TaskType) : undefined;
-  const rows = await getLeaderboard("all", taskType);
+  const rows = await getLeaderboard(taskType);
   const filters: { id?: TaskType; label: string }[] = [{ label: "All tasks" }, ...TASK_TYPE_IDS.map((id) => ({ id, label: TASK_TYPES[id].label }))];
   return (
     <Card>
       <CardHeader>
         <CardTitle>Leaderboard</CardTitle>
         <CardDescription>
-          Judge scores and win rates across batch evals and interactive comparisons, next to cost, latency and
+          Judge scores and win rates across every comparison, next to cost, latency and
           reliability. Human votes from the compare view are shown separately. The ± range is a 95% confidence
           interval: two models whose ranges overlap may not really differ yet.
         </CardDescription>
@@ -42,7 +42,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           ))}
         </nav>
         {rows.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{taskType ? `No ${TASK_TYPES[taskType].label.toLowerCase()} runs yet.` : "No data yet. Run a comparison or a batch eval."}</p>
+          <p className="text-muted-foreground text-sm">{taskType ? `No ${TASK_TYPES[taskType].label.toLowerCase()} runs yet.` : "No data yet. Run a comparison."}</p>
         ) : (
           <Table>
             <TableHeader>
@@ -57,7 +57,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                 <TableHead title="Mean output tokens per second (includes reasoning tokens)">Speed</TableHead>
                 <TableHead>Avg cost / call</TableHead>
                 <TableHead>Error rate</TableHead>
-                <TableHead title="Distinct compares and eval runs">Runs</TableHead>
+                <TableHead title="Distinct comparisons">Runs</TableHead>
                 <TableHead>Calls</TableHead>
               </TableRow>
             </TableHeader>

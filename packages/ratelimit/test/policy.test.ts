@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { effectiveLimits, parseRateLimitHeaders, parseReset } from "../src/policy";
+import { effectiveLimits, LocalBucketState, parseRateLimitHeaders, parseReset } from "../src/policy";
 
-const limits = { requestsPerWindow: 100, tokensPerWindow: 1_000_000, maxInFlight: 16, windowMs: 60_000, leaseTtlMs: 60_000, batchShare: 0.3 };
+const limits = { requestsPerWindow: 100, tokensPerWindow: 1_000_000, maxInFlight: 16, windowMs: 60_000, leaseTtlMs: 60_000 };
 
 describe("bucket policy", () => {
-  it("prefers learned limits, scaled by safety, AIMD factor and lane", () => {
-    expect(effectiveLimits(limits, { factor: 1 }, "interactive")).toEqual({ requests: 100, tokens: 1_000_000, inFlight: 16 });
-    expect(effectiveLimits(limits, { factor: 1, learnedRequests: 120 }, "interactive").requests).toBe(108);
-    expect(effectiveLimits(limits, { factor: 1, learnedRequests: 120 }, "batch")).toEqual({ requests: 32, tokens: 300_000, inFlight: 4 });
-    expect(effectiveLimits(limits, { factor: 0.5 }, "interactive")).toEqual({ requests: 50, tokens: 500_000, inFlight: 8 });
+  it("prefers learned limits, scaled by safety and the AIMD factor", () => {
+    expect(effectiveLimits(limits, { factor: 1 })).toEqual({ requests: 100, tokens: 1_000_000, inFlight: 16 });
+    expect(effectiveLimits(limits, { factor: 1, learnedRequests: 120 }).requests).toBe(108);
+    expect(effectiveLimits(limits, { factor: 0.5 })).toEqual({ requests: 50, tokens: 500_000, inFlight: 8 });
+  });
+
+  it("halves once for a burst of 429s and recovers in exact steps", () => {
+    let now = 0;
+    const state = new LocalBucketState(() => now);
+    state.onRateLimited("b");
+    state.onRateLimited("b"); // same burst
+    expect(state.get("b").factor).toBe(0.5);
+    now += 10_000;
+    state.onRateLimited("b"); // a new 429 later counts again
+    expect(state.get("b").factor).toBe(0.25);
+    state.onSuccess("b");
+    expect(state.get("b").factor).toBe(0.3);
   });
 
   it("parses DO's rate-limit headers", () => {

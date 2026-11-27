@@ -1,10 +1,10 @@
-import type { Lane, Limits, ObservedLimits } from "./types";
+import type { Limits, ObservedLimits } from "./types";
 
 /**
  * The bucket policy, shared by every store.
  *
  *   base      = learned limit × LEARNED_SAFETY, or the configured fallback
- *   effective = base × aimdFactor × (batch ? batchShare : 1)
+ *   effective = base × aimdFactor
  *
  * The AIMD factor starts at 1, halves on a 429 (multiplicative decrease)
  * and recovers by AIMD_STEP per finished call (additive increase), so we
@@ -29,30 +29,32 @@ export interface EffectiveLimits {
   inFlight: number;
 }
 
-export function effectiveLimits(limits: Limits, state: BucketState, lane: Lane): EffectiveLimits {
-  const share = lane === "batch" ? limits.batchShare : 1;
-  const scale = state.factor * share;
+export function effectiveLimits(limits: Limits, state: BucketState): EffectiveLimits {
+  const scale = state.factor;
   const requests = state.learnedRequests ? state.learnedRequests * LEARNED_SAFETY : limits.requestsPerWindow;
   const tokens = state.learnedTokens ? state.learnedTokens * LEARNED_SAFETY : limits.tokensPerWindow;
   return {
     requests: Math.max(1, Math.floor(requests * scale)),
-    // Tokens are not floored at 1 request's worth: a batch call bigger than
-    // its lane's share simply waits (or the limiter rejects it as too large).
     tokens: Math.floor(tokens * scale),
     inFlight: Math.max(1, Math.floor(limits.maxInFlight * scale)),
   };
 }
 
-export const decreased = (factor: number) => Math.max(AIMD_MIN, factor / 2);
-export const increased = (factor: number) => Math.min(1, factor + AIMD_STEP);
+/** 429s within this long of a decrease are the same signal (a burst of parallel 429s halves once). */
+export const DECREASE_DEBOUNCE_MS = 5_000;
+
+// Rounded to 2 decimals so repeated steps stay exact (0.5, not 0.49999999999999994).
+const round2 = (x: number) => Math.round(x * 100) / 100;
+export const decreased = (factor: number) => Math.max(AIMD_MIN, round2(factor / 2));
+export const increased = (factor: number) => Math.min(1, round2(factor + AIMD_STEP));
 
 /**
  * Per-process bucket state (learned limits, AIMD factor). The leases and
  * cooldowns themselves are shared through the store; each instance learns
- * limits on its own, which is good enough at PoC scale (2 processes).
+ * limits on its own, which is good enough at PoC scale (one web instance).
  */
 export class LocalBucketState {
-  private states = new Map<string, BucketState & { learnedAt?: number }>();
+  private states = new Map<string, BucketState & { learnedAt?: number; decreasedAt?: number }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -65,7 +67,7 @@ export class LocalBucketState {
     return s;
   }
 
-  private update(bucket: string, patch: Partial<BucketState & { learnedAt: number }>) {
+  private update(bucket: string, patch: Partial<BucketState & { learnedAt: number; decreasedAt: number }>) {
     this.states.set(bucket, { factor: 1, ...this.states.get(bucket), ...patch });
   }
 
@@ -84,7 +86,9 @@ export class LocalBucketState {
   }
 
   onRateLimited(bucket: string) {
-    this.update(bucket, { factor: decreased(this.states.get(bucket)?.factor ?? 1) });
+    const s = this.states.get(bucket);
+    if (s?.decreasedAt !== undefined && this.now() - s.decreasedAt < DECREASE_DEBOUNCE_MS) return;
+    this.update(bucket, { factor: decreased(s?.factor ?? 1), decreasedAt: this.now() });
   }
 }
 

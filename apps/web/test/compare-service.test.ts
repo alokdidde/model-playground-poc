@@ -50,7 +50,6 @@ vi.mock("../lib/server/services", () => {
     maxInFlight: 100,
     windowMs: 60_000,
     leaseTtlMs: 60_000,
-    batchShare: 0.3,
   });
   const gateway = new ModelGateway(new FakeProvider(), limiter);
   const prisma = {

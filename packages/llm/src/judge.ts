@@ -53,10 +53,6 @@ export interface Candidate {
 
 export interface JudgeInput {
   prompt: string;
-  /** Optional reference answer (batch evals). */
-  expected?: string;
-  /** Optional automatic check results per model, e.g. "valid JSON: failed". */
-  checks?: Record<string, { name: string; passed: boolean }[]>;
   /** Adds a task-specific focus to the rubric. */
   taskType?: TaskType;
   candidates: Candidate[];
@@ -87,26 +83,11 @@ export function shuffle<T>(items: T[], random: () => number = Math.random): T[] 
   return copy;
 }
 
-const CHECK_NAMES: Record<string, string> = { matches_reference: "matches the reference answer", valid_json: "is valid JSON" };
-
-export function buildJudgePrompt(
-  prompt: string,
-  labelled: { label: string; output: string; checks?: { name: string; passed: boolean }[] }[],
-  expected?: string,
-  taskType: TaskType = "general",
-): string {
+export function buildJudgePrompt(prompt: string, labelled: { label: string; output: string }[], taskType: TaskType = "general"): string {
   const focus = TASK_TYPES[taskType]?.judgeFocus;
   const parts = [`## User prompt\n${prompt}`];
   if (focus) parts.unshift(`## Task type: ${TASK_TYPES[taskType].label}\n${focus}`);
-  if (expected) parts.push(`## Reference answer (may be imperfect)\n${expected}`);
-  for (const { label, output, checks } of labelled) {
-    let block = `### Response ${label}\n${output || "(empty response)"}`;
-    if (checks?.length) {
-      const lines = checks.map((c) => `- ${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? "passed" : "FAILED"}`);
-      block += `\n\nAutomatic checks on Response ${label}:\n${lines.join("\n")}`;
-    }
-    parts.push(block);
-  }
+  for (const { label, output } of labelled) parts.push(`### Response ${label}\n${output || "(empty response)"}`);
   return parts.join("\n\n");
 }
 
@@ -140,13 +121,13 @@ export interface OneOrder {
 
 /** One judge call over the candidates in the given order. Retries once on unusable JSON. */
 async function judgeOnce(gateway: ModelGateway, input: JudgeInput, ordered: Candidate[], options: CallOptions): Promise<OneOrder> {
-  const labelled = ordered.map((c, i) => ({ ...c, label: String.fromCharCode(65 + i), checks: input.checks?.[c.model] }));
+  const labelled = ordered.map((c, i) => ({ ...c, label: String.fromCharCode(65 + i) }));
   const labelToModel = new Map(labelled.map((c) => [c.label, c.model]));
   const request = {
     model: input.judgeModel,
     messages: [
       { role: "system" as const, content: JUDGE_SYSTEM_PROMPT },
-      { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.expected, input.taskType) },
+      { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.taskType) },
     ],
     maxTokens: 800,
     temperature: 0,

@@ -57,7 +57,7 @@ describe("buildJudgePrompt task focus", () => {
     const { buildJudgePrompt } = await import("../src/judge");
     const labelled = [{ label: "A", output: "42" }];
     expect(buildJudgePrompt("q", labelled)).not.toContain("Task type");
-    expect(buildJudgePrompt("q", labelled, undefined, "reasoning")).toMatch(/^## Task type: Reasoning & math\n.*final answer/);
+    expect(buildJudgePrompt("q", labelled, "reasoning")).toMatch(/^## Task type: Reasoning & math\n.*final answer/);
   });
 });
 
@@ -121,11 +121,3 @@ describe("runJudge order", () => {
   });
 });
 
-describe("buildJudgePrompt checks", () => {
-  it("adds automatic check results under each response", async () => {
-    const { buildJudgePrompt } = await import("../src/judge");
-    const text = buildJudgePrompt("q", [{ label: "A", output: "{}", checks: [{ name: "valid_json", passed: false }] }], "42");
-    expect(text).toContain("## Reference answer");
-    expect(text).toContain("Automatic checks on Response A:\n- is valid JSON: FAILED");
-  });
-});

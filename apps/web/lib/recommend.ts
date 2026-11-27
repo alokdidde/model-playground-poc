@@ -126,39 +126,3 @@ function formatRatio(ratio: number): string {
   const n = Math.round(ratio);
   return n === 2 ? "half" : n === 3 ? "a third of" : `1/${n}th of`;
 }
-
-/**
- * Averages per-prompt results (a batch eval) into one candidate per model,
- * so the same recommendation logic works on many prompts. Only judged,
- * successful answers count towards quality; failures are reported separately.
- */
-export function aggregateResults(
-  rows: { model: string; status: string; score: number | null; latencyMs: number; costUsd: number | null }[],
-): (Candidate & { judged: number; failed: number })[] {
-  const by = new Map<string, typeof rows>();
-  for (const r of rows) by.set(r.model, [...(by.get(r.model) ?? []), r]);
-  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
-  const out: (Candidate & { judged: number; failed: number })[] = [];
-  for (const [model, rs] of by) {
-    const ok = rs.filter((r) => r.status === "SUCCEEDED");
-    const scores = ok.map((r) => r.score).filter((s): s is number => s !== null);
-    if (scores.length === 0) continue;
-    const costs = ok.map((r) => r.costUsd).filter((c): c is number => c !== null);
-    const overall = Math.round(mean(scores) * 10) / 10;
-    out.push({
-      model,
-      judged: scores.length,
-      failed: rs.length - ok.length,
-      score: { model, label: "", accuracy: overall, helpfulness: overall, clarity: overall, overall },
-      metrics: {
-        latencyMs: Math.round(mean(ok.map((r) => r.latencyMs))),
-        inputTokens: 0,
-        outputTokens: 0,
-        tokensEstimated: false,
-        costUsd: costs.length === ok.length && costs.length > 0 ? mean(costs) : null,
-        attempts: 1,
-      },
-    });
-  }
-  return out;
-}

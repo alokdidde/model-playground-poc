@@ -1,6 +1,5 @@
 import type { JudgeScore, TaskType } from "@fomo/shared";
-import { percentile } from "@/lib/eval-report";
-import { ci95HalfWidth } from "@/lib/stats";
+import { ci95HalfWidth, percentile } from "@/lib/stats";
 import { prisma } from "./services";
 
 export interface LeaderboardRow {
@@ -10,7 +9,7 @@ export interface LeaderboardRow {
   avgScore: number | null;
   /** ± half-width of the 95% confidence interval of avgScore (null below 2 judged answers). */
   scoreCi95: number | null;
-  /** Distinct compares and eval runs this model took part in. */
+  /** Distinct compares this model took part in. */
   runs: number;
   /** Share of judged prompts this model won. */
   winRate: number | null;
@@ -41,13 +40,10 @@ interface Acc {
 }
 
 /**
- * Aggregates batch eval results and interactive comparisons into one table.
- * Computed on read: fine at PoC scale. At larger scale this becomes a
- * materialised view refreshed by the worker (see ROADMAP.md).
+ * Aggregates every comparison into one table. Computed on read: fine at
+ * PoC scale. At larger scale this becomes a materialised view (see ROADMAP.md).
  */
-export async function getLeaderboard(source: "all" | "evals" | "compare", taskType?: TaskType): Promise<LeaderboardRow[]> {
-  // "Best model" depends on the job, so the table can be cut by task type.
-  const runWhere = taskType ? { run: { taskType } } : {};
+export async function getLeaderboard(taskType?: TaskType): Promise<LeaderboardRow[]> {
   const acc = new Map<string, Acc>();
   const get = (model: string) => {
     let a = acc.get(model);
@@ -71,55 +67,29 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
     if (r.costUsd !== null) a.cost.push(r.costUsd);
   };
 
-  if (source !== "compare") {
-    const [results, prompts] = await Promise.all([
-      prisma.evalResult.findMany({ where: runWhere, select: {
-          model: true,
-          status: true,
-          latencyMs: true,
-          ttftMs: true,
-          outputTokensPerSec: true,
-          costUsd: true,
-          score: true,
-          runId: true,
-          promptIndex: true,
-        }, }),
-      prisma.evalPrompt.findMany({ where: { judgedAt: { not: null }, ...runWhere }, select: { runId: true, index: true, winnerModel: true } }),
-    ]);
-    const judged = new Set(prompts.map((p) => `${p.runId}:${p.index}`));
-    for (const r of results) {
+  // "Best model" depends on the job, so the table can be cut by task type.
+  const comparisons = await prisma.comparison.findMany({
+    where: taskType ? { taskType } : {},
+    select: {
+      id: true,
+      results: { select: { model: true, status: true, latencyMs: true, ttftMs: true, outputTokensPerSec: true, costUsd: true } },
+      judgement: true,
+      vote: true,
+    },
+  });
+  for (const c of comparisons) {
+    for (const r of c.results) {
       addCall(r);
-      get(r.model).runs.add(`eval:${r.runId}`);
-      if (r.score !== null) get(r.model).scores.push(r.score);
-      if (r.status === "SUCCEEDED" && judged.has(`${r.runId}:${r.promptIndex}`)) get(r.model).contests++;
+      get(r.model).runs.add(c.id);
     }
-    for (const p of prompts) if (p.winnerModel) get(p.winnerModel).wins++;
-  }
-
-  if (source !== "evals") {
-    const comparisons = await prisma.comparison.findMany({
-      where: taskType ? { taskType } : {},
-      select: {
-        id: true,
-        results: { select: { model: true, status: true, latencyMs: true, ttftMs: true, outputTokensPerSec: true, costUsd: true } },
-        judgement: true,
-        vote: true,
-      },
-    });
-    for (const c of comparisons) {
-      for (const r of c.results) {
-        addCall(r);
-        get(r.model).runs.add(`compare:${c.id}`);
+    if (c.judgement) {
+      for (const s of c.judgement.scores as unknown as JudgeScore[]) {
+        get(s.model).scores.push(s.overall);
+        get(s.model).contests++;
       }
-      if (c.judgement) {
-        for (const s of c.judgement.scores as unknown as JudgeScore[]) {
-          get(s.model).scores.push(s.overall);
-          get(s.model).contests++;
-        }
-        if (c.judgement.winnerModel) get(c.judgement.winnerModel).wins++;
-      }
-      if (c.vote?.preferredModel) get(c.vote.preferredModel).votes++;
+      if (c.judgement.winnerModel) get(c.judgement.winnerModel).wins++;
     }
+    if (c.vote?.preferredModel) get(c.vote.preferredModel).votes++;
   }
 
   const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);

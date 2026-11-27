@@ -1,9 +1,8 @@
 import type { CallMetrics } from "@fomo/shared";
 import {
-  delayHonoringRetryAfter,
   RateLimitExceededError,
+  retryDelay,
   sleep,
-  type Lane,
   type Lease,
   type ObservedLimits,
   type RateLimiter,
@@ -11,7 +10,7 @@ import {
 import { estimateCostUsd } from "./catalog";
 import { StreamInterruptedError, UpstreamError } from "./errors";
 import { estimateInputTokens, estimateTokens, reservationFor } from "./tokens";
-import type { ChatProvider, ChatRequest, Usage } from "./types";
+import type { ChatProvider, ChatRequest, ResponseMeta, Usage } from "./types";
 
 export interface CallOptions {
   /** Cancels everything (e.g. the browser disconnected). Never retried. */
@@ -23,15 +22,9 @@ export interface CallOptions {
   maxAttempts?: number;
   /** How long we are willing to wait for rate-limit capacity before each attempt. */
   maxQueueWaitMs?: number;
-  /** "interactive" (a person is watching; default) or "batch" (yields capacity to interactive). */
-  lane?: Lane;
-  /**
-   * Streaming only: retry a stream that failed part-way, discarding its text.
-   * Safe when nobody has seen the text yet (the batch worker); the compare
-   * view leaves this off, since retrying would duplicate text on screen.
-   */
-  restartInterruptedStreams?: boolean;
   onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
+  /** Correlation id for rate events (a comparison id). */
+  tag?: string;
   onWait?: (info: { waitMs: number; reason: string }) => void;
 }
 
@@ -52,8 +45,7 @@ const DEFAULTS = {
 } satisfies Partial<CallOptions>;
 
 /**
- * The single choke point for every model call, from both the web app and
- * the worker. Each attempt:
+ * The single choke point for every model call. Each attempt:
  *
  *   1. takes a lease from the shared RateLimiter (requests + tokens),
  *   2. calls the provider with a per-attempt timeout,
@@ -72,12 +64,12 @@ export class ModelGateway {
     readonly limiter: RateLimiter,
   ) {}
 
-  /** Non-streaming call (used by the judge and the batch worker). */
+  /** Non-streaming call (used by the judge). */
   complete(request: ChatRequest, options: CallOptions = {}): Promise<CallResult> {
     return this.run(request, options, async (attemptRequest, signal) => {
       const result = await this.provider.complete(attemptRequest, signal);
-      if (result.rateLimits) this.observe(request.model, result.rateLimits);
-      return { text: result.text, usage: result.usage };
+      if (result.rateLimits) this.observe(request.model, result.rateLimits, options.tag);
+      return { text: result.text, usage: result.usage, meta: result.meta };
     });
   }
 
@@ -101,6 +93,7 @@ export class ModelGateway {
       let firstChunkAt: number | undefined;
       let reasoned = false;
       let finishReason: string | undefined;
+      let meta: ResponseMeta | undefined;
       try {
         for await (const chunk of this.provider.stream(attemptRequest, combined)) {
           if (chunk.type === "usage") {
@@ -108,7 +101,11 @@ export class ModelGateway {
             continue;
           }
           if (chunk.type === "limits") {
-            this.observe(request.model, chunk.limits);
+            this.observe(request.model, chunk.limits, options.tag);
+            continue;
+          }
+          if (chunk.type === "meta") {
+            meta = chunk.meta;
             continue;
           }
           if (chunk.type === "finish") {
@@ -136,7 +133,7 @@ export class ModelGateway {
         if (firstToken.signal.aborted) upstream = firstToken.signal.reason;
         else if (signal.aborted && isTimeout(signal.reason)) upstream = new UpstreamError("timeout", "Model call timed out");
         // Text already reached the user: retrying would duplicate it.
-        if (sentSoFar.length > 0 && upstream instanceof UpstreamError && !options.restartInterruptedStreams) {
+        if (sentSoFar.length > 0 && upstream instanceof UpstreamError) {
           throw new StreamInterruptedError(upstream, sentSoFar);
         }
         throw upstream;
@@ -152,7 +149,7 @@ export class ModelGateway {
           `Used all ${attemptRequest.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
         );
       }
-      return { text, usage, ttftMs, firstChunkAt, reasoned };
+      return { text, usage, ttftMs, firstChunkAt, reasoned, meta };
     });
   }
 
@@ -163,14 +160,17 @@ export class ModelGateway {
   ): Promise<CallResult> {
     const maxAttempts = options.maxAttempts ?? DEFAULTS.maxAttempts;
     const attemptTimeoutMs = options.attemptTimeoutMs ?? DEFAULTS.attemptTimeoutMs;
+    const maxQueueWaitMs = options.maxQueueWaitMs ?? DEFAULTS.maxQueueWaitMs;
+    const events = this.limiter.events;
+    const ev = { model: request.model, tag: options.tag } as const;
     // Only max_tokens ever changes between attempts (see "token_budget" below).
     let current = request;
     for (let attempt = 1; ; attempt++) {
       const lease = await this.limiter.acquire(request.model, reservationFor(current), {
         signal: options.signal,
-        maxWaitMs: options.maxQueueWaitMs ?? DEFAULTS.maxQueueWaitMs,
+        maxWaitMs: maxQueueWaitMs,
         onWait: options.onWait,
-        lane: options.lane,
+        tag: options.tag,
       });
 
       const attemptStartedAt = Date.now();
@@ -178,10 +178,11 @@ export class ModelGateway {
       const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
       try {
-        const { text, usage, ttftMs, firstChunkAt, reasoned } = await attemptFn(current, signal, attemptStartedAt);
+        const { text, usage, ttftMs, firstChunkAt, reasoned, meta } = await attemptFn(current, signal, attemptStartedAt);
         const finishedAt = Date.now();
         const inputTokens = usage?.inputTokens ?? estimateInputTokens(request);
         const outputTokens = usage?.outputTokens ?? estimateTokens(text);
+        events.emit({ ...ev, kind: "attempt_ok", attempt, ms: finishedAt - attemptStartedAt, data: { ttftMs, inputTokens, outputTokens, ...meta } });
         await this.releaseQuietly(lease, inputTokens + outputTokens);
         return {
           output: text,
@@ -205,6 +206,7 @@ export class ModelGateway {
           timeout.aborted && !options.signal?.aborted && !(rawError instanceof StreamInterruptedError)
             ? timeoutError(attemptTimeoutMs, rawError)
             : rawError;
+        events.emit({ ...ev, kind: "attempt_failed", attempt, ms: Date.now() - attemptStartedAt, data: describeFailure(error) });
         await this.releaseQuietly(lease, tokensChargedFor(error, lease));
 
         if (options.signal?.aborted) throw options.signal.reason ?? error;
@@ -214,26 +216,37 @@ export class ModelGateway {
         const raised = Math.min(request.maxTokens * TOKEN_BUDGET_GROWTH, MAX_RAISED_TOKENS);
         if (error instanceof UpstreamError && error.kind === "token_budget" && current === request && raised > request.maxTokens && attempt < maxAttempts) {
           current = { ...request, maxTokens: raised };
+          events.emit({ ...ev, kind: "retry", attempt, ms: 0, data: { errorKind: error.kind, maxTokensRaisedTo: raised } });
           options.onRetry?.({ attempt, delayMs: 0, reason: `ran out of tokens while reasoning, retrying with max tokens ${raised}` });
           continue;
         }
         if (!(error instanceof UpstreamError) || !error.retryable || attempt >= maxAttempts) throw error;
 
-        if (error.rateLimits) this.observe(request.model, error.rateLimits);
+        if (error.rateLimits) this.observe(request.model, error.rateLimits, options.tag);
+        // DO sends no Retry-After on a 429, but its headers say which counter ran out and when it resets.
+        const retryAfterMs = error.retryAfterMs ?? (error.kind === "rate_limited" ? resetOfSpentCounter(error.rateLimits) : undefined);
         if (error.kind === "rate_limited") {
+          events.emit({ ...ev, kind: "rate_limited", attempt, data: { retryAfterMs, retryAfterHeader: error.retryAfterMs, headers: error.rateLimits, message: error.message } });
           // Tell every instance to back off, not just this one.
-          await this.limiter.coolDown(request.model, error.retryAfterMs ?? 1_000).catch(() => undefined);
+          await this.limiter.coolDown(request.model, retryAfterMs ?? 1_000, "429", true, options.tag).catch(() => undefined);
         }
-        const delayMs = delayHonoringRetryAfter(attempt, error.retryAfterMs);
-        options.onRetry?.({ attempt, delayMs, reason: error.message });
-        await sleep(delayMs, options.signal);
+        const delay = retryDelay(attempt, retryAfterMs);
+        // Don't sleep past what the caller will wait anyway: a person watching a compare would
+        // rather see "rate limited" now than a spinner until the provider's window resets.
+        if (delay.delayMs > maxQueueWaitMs) {
+          events.emit({ ...ev, kind: "attempt_failed", attempt, data: { errorKind: "gave_up", reason: `retry would wait ${delay.delayMs} ms, over the ${maxQueueWaitMs} ms budget` } });
+          throw error;
+        }
+        events.emit({ ...ev, kind: "retry", attempt, ms: delay.delayMs, data: { ...delay, errorKind: error.kind, status: error.status } });
+        options.onRetry?.({ attempt, delayMs: delay.delayMs, reason: error.message });
+        await sleep(delay.delayMs, options.signal);
       }
     }
   }
 
   /** Learns the provider's real limits from its headers. Fire and forget: never slows or fails a call. */
-  private observe(model: string, limits: ObservedLimits): void {
-    this.limiter.observe(model, limits).catch((error: unknown) => console.warn("[gateway] could not record rate limits", error));
+  private observe(model: string, limits: ObservedLimits, tag?: string): void {
+    this.limiter.observe(model, limits, tag).catch((error: unknown) => console.warn("[gateway] could not record rate limits", error));
   }
 
   /** A lease store hiccup must not turn a successful model call into a failure. */
@@ -253,6 +266,15 @@ interface AttemptResult {
   /** When the first chunk of any kind arrived (streaming only). */
   firstChunkAt?: number;
   reasoned?: boolean;
+  meta?: ResponseMeta;
+}
+
+function describeFailure(error: unknown): Record<string, unknown> {
+  if (error instanceof UpstreamError) {
+    return { errorKind: error.kind, status: error.status, retryable: error.retryable, requestId: error.options.requestId, message: error.message.slice(0, 200) };
+  }
+  if (error instanceof StreamInterruptedError) return { errorKind: "stream_interrupted", cause: error.cause.kind };
+  return { errorKind: "other", message: String(error).slice(0, 200) };
 }
 
 /**
@@ -275,6 +297,20 @@ function timeoutError(ms: number, cause: unknown): UpstreamError {
   return cause instanceof UpstreamError && cause.kind === "timeout"
     ? cause
     : new UpstreamError("timeout", `Model call exceeded ${ms}ms`, { cause });
+}
+
+/**
+ * When a 429 comes without Retry-After, the reset time of whichever counter
+ * is spent (remaining 0) is the honest wait. Undefined if none is.
+ */
+export function resetOfSpentCounter(limits: ObservedLimits | undefined): number | undefined {
+  if (!limits) return undefined;
+  const spent = [
+    [limits.remainingRequests, limits.resetRequestsMs],
+    [limits.remainingTokens, limits.resetTokensMs],
+    [limits.remainingTokensPerDay, limits.resetTokensPerDayMs],
+  ].filter(([remaining, reset]) => remaining === 0 && reset !== undefined);
+  return spent.length ? Math.max(...spent.map(([, reset]) => reset!)) : undefined;
 }
 
 /**

@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export const GET = apiRoute({
   query: LeaderboardQuerySchema,
-  handler: async ({ query }) => ({ items: await getLeaderboard(query.source, query.taskType) }),
+  handler: async ({ query }) => ({ items: await getLeaderboard(query.taskType) }),
 });

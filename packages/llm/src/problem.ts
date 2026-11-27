@@ -1,6 +1,7 @@
 import { PROBLEM_TYPES, type Problem } from "@fomo/shared";
 import { RateLimitExceededError } from "@fomo/ratelimit";
 import { StreamInterruptedError, UpstreamError } from "./errors";
+import { resetOfSpentCounter } from "./gateway";
 
 /**
  * Turn a model-call failure into an RFC 9457 problem. Used inside SSE events
@@ -10,13 +11,16 @@ export function problemFromModelError(error: unknown, model: string): Problem {
   if (error instanceof StreamInterruptedError) {
     return { ...problemFromModelError(error.cause, model), detail: `${model} stopped mid-answer: ${error.cause.message}` };
   }
-  if (error instanceof RateLimitExceededError) {
+  // Also matched by name: in Next.js dev the class can be loaded twice (once per bundle),
+  // and then instanceof fails and a rate limit was reported as a 500.
+  if (error instanceof RateLimitExceededError || (error instanceof Error && error.name === "RateLimitExceededError")) {
+    const e = error as RateLimitExceededError;
     return {
       type: PROBLEM_TYPES.rateLimited,
       title: "Rate limit budget exhausted",
       status: 429,
-      detail: error.message,
-      retryAfterMs: error.retryAfterMs,
+      detail: e.message,
+      retryAfterMs: e.retryAfterMs,
       model,
     };
   }
@@ -30,7 +34,8 @@ export function problemFromModelError(error: unknown, model: string): Problem {
         title: "Model provider rate limited the request",
         status: 429,
         detail: error.message,
-        retryAfterMs: error.retryAfterMs,
+        // DO sends no Retry-After; the spent counter's reset is the honest hint.
+        retryAfterMs: error.retryAfterMs ?? resetOfSpentCounter(error.rateLimits),
         model,
       };
     }
