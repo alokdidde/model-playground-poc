@@ -47,7 +47,8 @@ Goal: replace "vibes" with evidence on the customer's workload. *Size: a small t
 
 - **Datasets**: upload prompts (CSV/JSONL) with optional reference answers, or capture them from production traffic (opt-in, sampled, PII-scrubbed).
 - **Custom rubrics and graders**: per-dataset judge prompts, plus deterministic checks (JSON schema valid, regex, contains/doesn't contain, code compiles, exact match) mixed with LLM judges.
-- **Judge calibration**: measure judge/human agreement using the votes we already collect; use multiple judges and majority voting for high-stakes runs; report confidence intervals, not just averages.
+- **Judge/human agreement from votes**: report how often the judge's winner matches the human "best answer" vote and thumbs, per task type, using the votes we already collect. Where agreement is low, re-weight or replace the judge for that task.
+- **A panel of judges**: for high-stakes runs, several smaller judges from different model families vote instead of one large judge. This cuts both one model's bias and cost (Verga et al. 2024, *Replacing Judges with Juries*). It builds on the two-order judging we already do.
 - **Cost/quality/latency frontier**: a Pareto chart per dataset ("Model B is 95% as good as Model A at 20% of the price").
 - **Regression testing for prompts and models ("CI for prompts")**: re-run a dataset on a schedule or on every prompt change, and alert when quality drops. This matters on DO specifically because only the two most recent versions of each model stay available, so model upgrades are forced.
 
@@ -56,6 +57,7 @@ Goal: replace "vibes" with evidence on the customer's workload. *Size: a small t
 Goal: the customer stops picking models by hand. *Size: the phase 2 team plus an ML engineer. Main risk: trust. A wrong route is a production incident for the customer, so start with shadow traffic and explicit quality bars.*
 
 - **Model recommendations**: "for prompts like yours, use X": a nearest-neighbour lookup over embeddings of past evaluated prompts, using judge scores and votes as labels.
+- **Learned routing**: train a router on accumulated (prompt, model, score, cost) data to pick, per request, the cheapest model expected to meet the quality bar (as in FrugalGPT 2023 and RouteLLM 2024). This powers `model: "auto"` below.
 - **Smart routing endpoint**: an OpenAI-compatible endpoint where `model: "auto"` routes each request to the cheapest model predicted to meet a quality bar, using a small classifier trained on accumulated eval data. Customers set the policy (cost-optimised, quality-optimised, latency SLO).
 - **Fallback chains**: if the primary model is rate-limited or down, fail over to the next-best model for that task (the gateway already knows about 429s and outages).
 - **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
