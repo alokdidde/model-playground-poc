@@ -321,9 +321,9 @@ export function RunView({ id }: { id: string }) {
               </div>
             </div>
           )}
-          {/* On phones the columns swipe one at a time; these chips jump to one. */}
+          {/* Chips jump to a column whenever the row scrolls sideways: always on phones, and with 4+ models. */}
           {state.order.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1 md:hidden" aria-label="Jump to an answer">
+            <div className={cn("flex gap-1.5 overflow-x-auto pb-1", state.order.length <= 3 && "md:hidden")} aria-label="Jump to an answer">
               {sortedModels.map((m) => (
                 <button
                   key={m}
