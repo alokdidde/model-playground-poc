@@ -59,6 +59,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with a Postgres servi
 | `POST` | `/api/compare` | Body: prompt, models, `modelSettings` (per-model temperature/topP/maxTokens/reasoningEffort/systemPrompt), `judge`, `synthesize`. Response: `text/event-stream`. Optional `Idempotency-Key`. |
 | `GET` | `/api/compare` | Run history, newest first: `?limit=20&before=<id>` (cursor pagination). |
 | `GET` | `/api/compare/:id` | Stored comparison, results, judgement, vote. The Compare page reopens one at `/compare?run=<id>`. |
+| `POST` | `/api/compare/:id/cancel` | Stop a running compare. Closing the tab does not stop it: it finishes and is saved. |
 | `PUT` | `/api/compare/:id/vote` | "Best answer" vote (idempotent). |
 | `PUT` | `/api/compare/:id/rating` | Thumbs up/down on one model's answer: `{model, rating: "up" \| "down" \| null}`. |
 | `POST` | `/api/advisor` | "Help me choose": `{ query }` in plain words; returns the parsed intent, a ranking from measured data, and a short explanation. |

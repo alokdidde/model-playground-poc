@@ -23,7 +23,7 @@ zod schemas for every request body, the SSE event types, and the RFC 9457 proble
 `createComparison()` validates and saves the row *before* the stream opens, so idempotency conflicts get a real 409. `executeComparison()` runs every model in parallel. Each model gets its own `try/catch`, which saves its result and emits exactly one `model.completed` or `model.failed`. Then the judge and the synthesis run side by side, and the run ends `COMPLETED`, `PARTIAL` or `FAILED`.
 
 - **Design choice:** per-model isolation. One broken model never hides the others (tested in `test/compare-service.test.ts`).
-- **Expect:** "What if the browser disconnects?" The request's `AbortSignal` is passed down to the HTTP call, so tokens stop being spent and the run is saved as `CANCELLED`. The known gap is that it isn't finished in the background.
+- **Expect:** "What if the browser disconnects?" Nothing: the run isn't tied to the request, so it finishes and is saved, and the run page polls until it ends. Stop is an explicit `POST /api/compare/:id/cancel`, which aborts the run's calls (`cancelComparison`). A run left `RUNNING` by a restart is marked failed when read (`isAbandoned`).
 
 ## 4. The browser side of the stream: `apps/web/lib/api-client.ts`, `live-run.ts`, `compare-state.ts`
 
@@ -33,7 +33,7 @@ zod schemas for every request body, the SSE event types, and the RFC 9457 proble
 
 ## 5. Every model call: `packages/llm/src/gateway.ts`
 
-`ModelGateway.stream()` / `complete()`. Each attempt takes a lease, calls the provider with an attempt timeout and a first-token timeout, then releases the lease with the real token usage. Retries use exponential backoff with full jitter, and never wait less than `Retry-After`. DO sends none on a 429, so `resetOfSpentCounter()` takes the wait from the reset header of the counter at 0; if that is longer than the caller will wait (15 s), the call fails at once with a clear problem instead of a spinner. Every attempt, 429 and retry (with its backoff ceiling, jitter draw and server wait) is emitted as a rate event.
+`ModelGateway.stream()` / `complete()`. Each attempt takes a lease, calls the provider with an attempt timeout and a first-token timeout, then releases the lease with the real token usage. Retries use exponential backoff with full jitter, and never wait less than `Retry-After`. DO sends none on a 429, so `resetOfSpentCounter()` takes the wait from the reset header of the counter at 0; if that is longer than the caller will wait (5 min for compare), the call fails at once with a clear problem instead of a spinner. Every attempt, 429 and retry (with its backoff ceiling, jitter draw and server wait) is emitted as a rate event.
 
 - **Design choice:** retry only *before the first token*, so text never shows twice. Reasoning chunks count as "alive" for the first-token timer. If a reasoning model uses up `max_tokens`, there is one retry with 4x the budget.
 - **Expect:** "Why full jitter?" Many clients that got the same 429 shouldn't all retry at the same instant. "Why turn off the SDK's retries?" Two retry layers would multiply the attempts.

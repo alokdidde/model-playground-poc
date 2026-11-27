@@ -42,7 +42,7 @@ export function SelectedModels({
       <div className="flex flex-wrap items-center gap-2 px-4">
         <Layers className="text-primary size-5" />
         <h2 className="font-semibold">
-          Selected models ({selected.length}/{LIMITS.maxModelsPerCompare})
+          Selected models ({selected.length})
         </h2>
         <div className="ml-auto flex gap-2">
           <Button variant="outline" size="sm" onClick={saveCurrent} disabled={selected.length === 0}>
@@ -58,7 +58,7 @@ export function SelectedModels({
               <DropdownMenuLabel>Saved in this browser</DropdownMenuLabel>
               {presets.length === 0 && <DropdownMenuItem disabled>No presets yet</DropdownMenuItem>}
               {presets.map((p) => (
-                <DropdownMenuItem key={p.name} onSelect={() => onChange(p.models.slice(0, LIMITS.maxModelsPerCompare))}>
+                <DropdownMenuItem key={p.name} onSelect={() => onChange(p.models)}>
                   {p.name}
                 </DropdownMenuItem>
               ))}

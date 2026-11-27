@@ -14,8 +14,40 @@ import { errors } from "./errors";
 import { logger } from "./logger";
 import { getGateway, prisma } from "./services";
 
-/** Upper bound for a whole comparison, including the judge. */
-const COMPARISON_DEADLINE_MS = 150_000;
+/**
+ * Upper bound for a whole comparison, including the judge. Generous on purpose:
+ * a compare keeps running after the browser goes away, and with many models it
+ * may have to wait for DO's per-minute limits to reset (several times).
+ */
+export const COMPARISON_DEADLINE_MS = 15 * 60_000;
+
+/**
+ * How long one model call may wait for rate-limit capacity, and how many
+ * attempts it gets. A 429 retry waits for the provider's reset, so 6 attempts
+ * cover several minutes of throttling. Nobody has to keep the tab open for it.
+ */
+const CALL_OPTIONS = { maxQueueWaitMs: 5 * 60_000, maxAttempts: 6 } as const;
+
+/**
+ * Compares running in this process, so Stop can cancel one. Closing the tab no
+ * longer cancels a compare: it finishes in the background and is saved.
+ */
+// On globalThis: Next.js can load this module once per route bundle, and the
+// cancel route must see the same map as the compare route.
+const g = globalThis as unknown as { runningComparisons?: Map<string, AbortController> };
+const running = (g.runningComparisons ??= new Map<string, AbortController>());
+
+/** Stops a compare running in this process. Returns false if it isn't running here. */
+export function cancelComparison(id: string): boolean {
+  const controller = running.get(id);
+  controller?.abort(new Error("Stopped by the user"));
+  return Boolean(controller);
+}
+
+/** A compare still RUNNING long after the deadline was cut off by a restart or crash. */
+export function isAbandoned(c: { status: string; createdAt: Date }): boolean {
+  return (c.status === "RUNNING" || c.status === "QUEUED") && Date.now() - c.createdAt.getTime() > COMPARISON_DEADLINE_MS + 60_000;
+}
 
 /**
  * Step 1 (before the stream opens): persist the comparison. Doing this first
@@ -100,9 +132,32 @@ export async function executeComparison(
   comparison: Comparison,
   input: CompareRequest,
   emit: (event: CompareEvent) => void,
-  clientSignal: AbortSignal,
 ): Promise<void> {
-  const signal = AbortSignal.any([clientSignal, AbortSignal.timeout(COMPARISON_DEADLINE_MS)]);
+  // Not tied to the browser connection: only Stop or the deadline end a run early.
+  const stop = new AbortController();
+  running.set(comparison.id, stop);
+  try {
+    // Nobody may be listening any more; a failed write must never stop the run.
+    const safeEmit = (event: CompareEvent) => {
+      try {
+        emit(event);
+      } catch {
+        // the client went away
+      }
+    };
+    await runComparison(comparison, input, safeEmit, AbortSignal.any([stop.signal, AbortSignal.timeout(COMPARISON_DEADLINE_MS)]), stop.signal);
+  } finally {
+    running.delete(comparison.id);
+  }
+}
+
+async function runComparison(
+  comparison: Comparison,
+  input: CompareRequest,
+  emit: (event: CompareEvent) => void,
+  signal: AbortSignal,
+  stopped: AbortSignal,
+): Promise<void> {
   const gateway = getGateway();
   const judgeCfg = judgeConfigFromEnv();
   const judge = input.judge.enabled
@@ -132,6 +187,7 @@ export async function executeComparison(
           {
             signal,
             tag: comparison.id,
+            ...CALL_OPTIONS,
             onRetry: (r) => emit({ type: "model.retrying", model, ...r }),
             onWait: (w) => emit({ type: "model.waiting", model, ...w }),
           },
@@ -167,7 +223,7 @@ export async function executeComparison(
     }),
   );
 
-  if (clientSignal.aborted) {
+  if (stopped.aborted) {
     await finish(comparison.id, "CANCELLED");
     return;
   }
@@ -222,7 +278,7 @@ async function runJudgeStep(
     const verdict = await runJudge(
       gateway,
       { prompt: input.prompt, taskType: input.taskType, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
-      { signal, tag: comparisonId },
+      { signal, tag: comparisonId, ...CALL_OPTIONS },
     );
     await prisma.judgement.create({
       data: {
@@ -259,6 +315,7 @@ async function runSynthesisStep(
     const { output, metrics } = await gateway.stream(buildSynthesisRequest(prompt, succeeded, model), (text) => emit({ type: "synthesis.delta", text }), {
       signal,
       tag: comparisonId,
+      ...CALL_OPTIONS,
     });
     await prisma.comparison.update({ where: { id: comparisonId }, data: { synthesis: output, synthesisModel: model } });
     emit({ type: "synthesis.completed", model, output, metrics });

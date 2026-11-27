@@ -121,7 +121,7 @@ export interface OneOrder {
 
 /** One judge call over the candidates in the given order. Retries once on unusable JSON. */
 async function judgeOnce(gateway: ModelGateway, input: JudgeInput, ordered: Candidate[], options: CallOptions): Promise<OneOrder> {
-  const labelled = ordered.map((c, i) => ({ ...c, label: String.fromCharCode(65 + i) }));
+  const labelled = ordered.map((c, i) => ({ ...c, label: judgeLabel(i) }));
   const labelToModel = new Map(labelled.map((c) => [c.label, c.model]));
   const request = {
     model: input.judgeModel,
@@ -129,7 +129,8 @@ async function judgeOnce(gateway: ModelGateway, input: JudgeInput, ordered: Cand
       { role: "system" as const, content: JUDGE_SYSTEM_PROMPT },
       { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.taskType) },
     ],
-    maxTokens: 800,
+    // One score line per answer plus the rationale; grows with the number of answers.
+    maxTokens: judgeMaxTokens(ordered.length),
     temperature: 0,
   };
 
@@ -211,8 +212,20 @@ export function combineOrders(orders: OneOrder[]): Omit<JudgeVerdict, "judgeMode
 
 /** Replace "Response B" with the model name, so the rationale reads naturally in the UI. */
 function deAnonymise(rationale: string, labelToModel: Map<string, string>): string {
-  return rationale.replace(/\bResponse ([A-Z])\b/g, (match, label: string) => {
+  return rationale.replace(/\bResponse ([A-Z]+)\b/g, (match, label: string) => {
     const model = labelToModel.get(label);
     return model ? `${match} (${model})` : match;
   });
+}
+
+/** Room for the JSON verdict: about 60 tokens per score line, plus the rationale and some reasoning. */
+export function judgeMaxTokens(candidates: number): number {
+  return Math.max(800, 500 + 60 * candidates);
+}
+
+/** A, B, ..., Z, then AA, AB, ...: no limit on how many answers can be judged. */
+export function judgeLabel(index: number): string {
+  let label = "";
+  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) label = String.fromCharCode(65 + ((n - 1) % 26)) + label;
+  return label;
 }

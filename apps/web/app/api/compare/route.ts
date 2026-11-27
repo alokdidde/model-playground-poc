@@ -5,7 +5,7 @@ import { sseResponse } from "@/lib/server/sse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 180;
+export const maxDuration = 900;
 
 /**
  * POST /api/compare  ->  text/event-stream of CompareEvent
@@ -18,7 +18,8 @@ export const POST = apiRoute({
   body: CompareRequestSchema,
   handler: async ({ req, body, requestId }) => {
     const comparison = await createComparison(body, requestId, readIdempotencyKey(req));
-    return sseResponse<CompareEvent>(req.signal, (emit, signal) => executeComparison(comparison, body, emit, signal));
+    // The run outlives the connection: if the tab closes, the stream stops but the compare finishes and is saved.
+    return sseResponse<CompareEvent>(req.signal, (emit) => executeComparison(comparison, body, emit));
   },
 });
 

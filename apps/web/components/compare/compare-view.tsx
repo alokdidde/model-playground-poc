@@ -51,7 +51,7 @@ export function CompareView() {
     const from = q.get("from");
     if (from) return void prefillFrom(from);
     if (q.get("history")) setHistoryOpen(true);
-    const models = q.get("models")?.split(",").filter(Boolean).slice(0, LIMITS.maxModelsPerCompare);
+    const models = q.get("models")?.split(",").filter(Boolean);
     if (models?.length) setSelected(models.map(newSelection));
     const p = q.get("prompt");
     if (p) setPrompt(p);
@@ -145,8 +145,8 @@ export function CompareView() {
           <ModelCatalog
             models={models}
             selectedIds={selected.map((m) => m.id)}
-            canAddMore={selected.length < LIMITS.maxModelsPerCompare}
             onAdd={(id) => setSelected((s) => [...s, newSelection(id)])}
+            onAddMany={(ids) => setSelected((s) => [...s, ...ids.map(newSelection)])}
           />
         </div>
         <div className="order-1 min-w-0 space-y-6 lg:order-2">

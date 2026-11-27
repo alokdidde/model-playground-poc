@@ -25,7 +25,7 @@
 
 ### How the PoC answers it
 
-1. **Interactive compare.** One prompt, up to six models, each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
+1. **Interactive compare.** One prompt, any number of the available models (no cap), each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
 2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
 4. **Leaderboard and Help me choose.** Every comparison feeds a leaderboard that can be cut by task type, and Help me choose turns a use case in plain words into a ranked shortlist from that data.
@@ -107,9 +107,9 @@ Design points:
 
 - **Validate before streaming.** Validation, the idempotency check and the database insert happen before the response starts, so those errors get a real HTTP status and a problem body. Once the stream is open, the HTTP status is already 200, so failures become events.
 - **Per-model isolation (partial results).** Each model runs in its own promise that catches its own errors and always emits exactly one terminal event (`model.completed` or `model.failed`). This is `Promise.allSettled` semantics, written so each model also persists and reports as soon as *it* finishes rather than waiting for the slowest one.
-- **Three timeouts.** A per-attempt timeout (60 s), a first-token timeout (20 s, catches stuck requests early), and an overall deadline for the comparison (150 s).
+- **Three timeouts.** A per-attempt timeout (60 s), a first-token timeout (20 s, catches stuck requests early), and an overall deadline for the comparison (15 min, generous because a run may wait out DO's per-minute limits several times).
 - **Retries only before the first token.** If a stream fails after text reached the user, retrying would duplicate text on screen. The gateway retries only failures that happen before any token was sent; later failures surface as `model.failed` with the partial output kept.
-- **Client disconnect cancels upstream calls.** The request's `AbortSignal` flows down to the OpenAI SDK, so closing the tab stops spending tokens.
+- **A compare outlives the browser.** The run is not tied to the request's `AbortSignal`: if the tab closes or the network drops, the stream stops but the compare finishes on the server and is saved. Reopening the run page shows it as running and polls every 3 s until it ends. **Stop** is an explicit `POST /api/compare/:id/cancel`, which aborts the run's model calls (no more tokens spent) and saves it as `CANCELLED`. The registry of running compares is per process; with several web instances a cancel could land on the wrong one (the live app runs one). A run cut off by a restart would stay `RUNNING`, so a run still running 16 minutes after it started is marked `PARTIAL`/`FAILED` when read.
 - **SSE, not WebSockets.** The flow is one-way (server to browser), SSE works over plain HTTP through App Platform's load balancer, and the client is about 30 lines. We use `fetch` + a small parser instead of `EventSource` because `EventSource` cannot POST a body. A heartbeat comment every 15 s keeps idle connections open through proxies.
 - **Metrics per model:** time to first token, latency of the successful attempt, input/output tokens (from the provider's `usage`, or estimated and flagged with `*` if not reported), cost from the price table, and attempt count.
 
@@ -209,7 +209,7 @@ The rule: retry what a second attempt can fix; fail fast and clearly on what it 
 
 | Failure | What happens | Why |
 | --- | --- | --- |
-| 429 rate limited | Retried, never sooner than `Retry-After` or, since DO sends none, the reset time of the counter its headers show as spent. If that is further away than the caller will wait (15 s for compare), it fails at once with a clear "rate limited" problem. Sets a shared cooldown and halves the bucket's AIMD factor. | Capacity comes back; every instance should slow down, not just this one. Retrying before the reset only collects more 429s. |
+| 429 rate limited | Retried, never sooner than `Retry-After` or, since DO sends none, the reset time of the counter its headers show as spent. If that is further away than the caller will wait (5 min for compare), it fails at once with a clear "rate limited" problem. Sets a shared cooldown and halves the bucket's AIMD factor. | Capacity comes back; every instance should slow down, not just this one. Retrying before the reset only collects more 429s. |
 | 5xx, 529, 408/409/425, timeouts, network errors | Retried with backoff and full jitter. Up to 3 attempts, 60 s each. | Usually transient. |
 | No first token in 20 s | Counts as a timeout and is retried. Reasoning chunks count as "alive". | A hung connection looks like silence; a thinking model does not. |
 | Reasoning used all of `max_tokens` | One retry with 4x the budget (max 8,192), shown on the card. | The same request fails the same way; a bigger budget is the fix. |
@@ -217,9 +217,10 @@ The rule: retry what a second attempt can fix; fail fast and clearly on what it 
 | Stream drops after text was shown | Not retried; the partial answer stays, marked failed. | Retrying would repeat text on screen. |
 | One model fails | The others carry on; the run ends `PARTIAL`. The judge and synthesis need two answers, and failed models are left out of every chart and "best" pick. | One bad model must not hide the rest. |
 | Judge returns bad JSON | Asked once more; if it still fails, the answers and metrics stand without scores. | The judge is a second opinion, not a dependency. |
-| User closes the tab or presses Stop | The server's calls are aborted (no tokens wasted) and the run is saved as `CANCELLED`. | Nobody is waiting for the answer. |
+| User closes the tab | The compare keeps running and is saved; the run page picks it up again. | The user asked for the answers; coming back later should find them. |
+| User presses Stop | The server's calls are aborted (no tokens wasted) and the run is saved as `CANCELLED`. | An explicit request to stop spending. |
 
-Known gaps: the tokens spent by a failed attempt are not added to the run's cost (only the successful attempt is measured), and a compare whose browser disconnects mid-run is cancelled rather than finished in the background (refreshing the run page mid-stream shows what was saved so far). Running compares as background jobs that the page subscribes to would close that gap, at the cost of a pub/sub hop.
+Known gaps: the tokens spent by a failed attempt are not added to the run's cost (only the successful attempt is measured), and a run page reopened mid-run shows each answer when it is saved, not token by token (the live text only streams to the tab that started it). Publishing deltas through a pub/sub hop would close that gap.
 
 ### Staying under the limits: leasing
 
@@ -249,7 +250,7 @@ So the budget is **per (access key, model)**, not per account, and the right num
 2. **Learn limits from headers.** The provider parses the headers on every response (and on 429 errors) and the gateway calls `limiter.observe()`. Learned limits replace the configured fallback (`RATE_LIMIT_RPM`/`TPM`, used until the first response) at 90% (`LEARNED_SAFETY`), and expire after an hour without a fresh header. If a header says a counter is at **0 remaining** (per minute or per day), the bucket is put into cooldown until that counter's reset, instead of collecting 429s.
 3. **Reserve the worst case, then reconcile.** A lease reserves 1 request and *prompt estimate + `maxTokens`* tokens inside a sliding 60 s window, plus an in-flight slot (with a TTL, so a crashed caller can't hold it). On completion the estimate is replaced with the real usage, which returns unused budget. Failed attempts are charged 0 tokens for a 429/4xx (rejected before generation) and the full reservation for timeouts/5xx (unknown, so we over-count, the safe direction).
 4. **AIMD when the limits are wrong.** Each bucket has a factor (starts at 1) that scales all its limits. A real 429 halves it (multiplicative decrease, floor 0.1); each finished call adds 0.05 (additive increase). Parallel 429s from one burst count once (a 5 s debounce), and a cooldown *predicted* from the headers ("0 left until the reset") does not halve it, because the limit is known and only this window is spent. An earlier version halved twice per burst, which the stress test caught. This finds the real capacity when another app shares the key or the provider changes limits without saying so. The 429 also sets a **shared cooldown** until the reset, so every instance backs off, not just the one that got it.
-5. **Waiting.** With no capacity, the caller sleeps (with jitter) until the oldest lease leaves the window, up to its wait budget (15 s). The UI shows "waiting for capacity".
+5. **Waiting.** With no capacity, the caller sleeps (with jitter) until the oldest lease leaves the window, up to its wait budget (5 min for compare; the run carries on even if the tab is closed). The UI shows "waiting for capacity".
 
 Because every web instance leases from the same store, the *whole system* stays under the limits. Per-process limiters would each think they had the full budget.
 
@@ -276,8 +277,12 @@ Why not OpenTelemetry for this? These are domain decisions (why a call waited, w
 | --- | --- | --- | --- | --- |
 | 80 compares × 2 models, at once | 160 | 0 | 123 | All 37 failures were on the reasoning model (`glm-5.3-flash`): a small `max_tokens` made calls retry with a bigger budget, which used up its share sooner. The rest waited (p95 about 10 s) and then failed with "rate limited" when the 15 s budget ran out. |
 | 150 compares × 2 models, at once | 300 | 0 | 139 | `mistral-3-14B` answered exactly 108 (120/min × 0.9) and the other 42 waited until the 15 s budget ran out; `glm-5.2` answered 31, again slowed by budget retries. Nothing reached DO above the limit. |
+| 150 compares × 2 models, at once, 5 min wait budget (after the change) | 300 | 0 | **300** | Every answer arrived. Calls queued for their model's capacity (p95 wait 63 s for `mistral-3-14B`, 88 s for `glm-5.2`), and the slowest compare finished in 102 s. |
 
 What this says: the shared lease keeps the whole app inside DO's per-model limit, so a crowd produces short waits and clear "rate limited, try again in N s" errors, never a storm of 429s or retries. The limit is **per model**, so 100 different models in flight don't compete with each other; the ceiling bites when many people pick the *same* model in the same minute (about 108 answers a minute each, on one key). Raising it means a higher DO tier, one key per customer (phase 1 of the roadmap), or spreading load across equivalent models.
+
+After this test the compare wait budget went from 15 s to 5 minutes (6 attempts, 429 retries waiting for DO's reset), because a compare no longer depends on the tab staying open. Rerun with the same 150 compares: see the third row of the table above.
+
 
 ### Lease store: Postgres
 
@@ -336,7 +341,7 @@ One root `Dockerfile` builds the image for both the web service and the migrate 
 
 **The live PoC** runs a dev-sized variant of the spec: 1 web instance (`apps-s-1vcpu-1gb`), and a separately created Managed Postgres cluster (`db-s-1vcpu-1gb`, nyc3) wired in by a secret URL rather than the spec's `databases:` block (the account's database limit refused a spec-managed cluster). About $36/mo for the app plus $15/mo for the database.
 
-Operational notes: each instance opens a Prisma pool. Small managed Postgres plans allow about 20-25 connections, so add a connection pool (PgBouncer, built into DO Managed Postgres) before scaling out instances. SSE responses need `maxDuration` long enough for the slowest model (set to 180 s).
+Operational notes: each instance opens a Prisma pool. Small managed Postgres plans allow about 20-25 connections, so add a connection pool (PgBouncer, built into DO Managed Postgres) before scaling out instances. The compare route's `maxDuration` matches the run deadline (900 s); on App Platform's long-running Node server a run continues after its response closes anyway.
 
 ### Why App Platform, and when DOKS
 

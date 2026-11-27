@@ -10,6 +10,7 @@ import { CompareRequestSchema, type CompareEvent } from "@fomo/shared";
 
 const JUDGE = "openai-gpt-oss-120b";
 const BROKEN = "mistral-3-14B";
+const SLOW = "glm-5.2";
 
 /** Contestants stream a short answer; BROKEN is rejected (400, not retried); the judge returns valid JSON. */
 class FakeProvider implements ChatProvider {
@@ -32,7 +33,11 @@ class FakeProvider implements ChatProvider {
       model: request.model,
     };
   }
-  async *stream(request: ChatRequest): AsyncGenerator<StreamChunk> {
+  async *stream(request: ChatRequest, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
+    if (request.model === SLOW) {
+      // Never answers on its own: only an abort ends it.
+      await new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    }
     if (request.model === BROKEN) throw UpstreamError.fromStatus(400, "bad request");
     const text = request.model === JUDGE ? "Merged answer [Model]" : `answer from ${request.model}`;
     for (const word of text.split(" ")) yield { type: "delta", text: `${word} ` };
@@ -69,7 +74,7 @@ describe("executeComparison", () => {
     });
     const events: CompareEvent[] = [];
 
-    await executeComparison({ id: "cmp_1" } as never, input, (e) => events.push(e), new AbortController().signal);
+    await executeComparison({ id: "cmp_1" } as never, input, (e) => events.push(e));
 
     const types = events.map((e) => e.type);
     expect(types[0]).toBe("comparison.started");
@@ -98,5 +103,29 @@ describe("executeComparison", () => {
       [BROKEN, "FAILED"],
     ]);
     expect(db.judgements).toHaveLength(1);
+  });
+
+  it("keeps running when nobody is listening (the tab was closed)", async () => {
+    const { executeComparison } = await import("../lib/server/compare-service");
+    const input = CompareRequestSchema.parse({ prompt: "hi", models: ["deepseek-v4.1-flash", "glm-5.3-flash"], judge: { enabled: false } });
+    db.updates.length = 0;
+    // An emit that throws, like writing to a closed stream, must not stop the run.
+    await executeComparison({ id: "cmp_2" } as never, input, () => {
+      throw new Error("stream closed");
+    }).catch(() => undefined);
+    expect(db.updates.at(-1)).toMatchObject({ where: { id: "cmp_2" }, data: { status: "COMPLETED" } });
+  });
+
+  it("stops when the user presses Stop, and is saved as CANCELLED", async () => {
+    const { executeComparison, cancelComparison } = await import("../lib/server/compare-service");
+    const input = CompareRequestSchema.parse({ prompt: "hi", models: ["deepseek-v4.1-flash", SLOW], judge: { enabled: false } });
+    db.updates.length = 0;
+    const events: CompareEvent[] = [];
+    const run = executeComparison({ id: "cmp_3" } as never, input, (e) => events.push(e));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(cancelComparison("cmp_3")).toBe(true);
+    await run;
+    expect(db.updates.at(-1)).toMatchObject({ where: { id: "cmp_3" }, data: { status: "CANCELLED" } });
+    expect(cancelComparison("cmp_3")).toBe(false); // no longer running
   });
 });

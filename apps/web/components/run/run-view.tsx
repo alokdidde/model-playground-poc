@@ -136,6 +136,12 @@ export function RunView({ id }: { id: string }) {
   const answered = state.order.filter((m) => ["done", "failed"].includes(state.panels[m]?.status ?? "")).length;
   const longPrompt = info.prompt.length > 280 || info.prompt.split("\n").length > 5;
 
+  // Works for a run streaming in this tab and for one left running when the tab was closed.
+  function stopRun() {
+    if (live) return live.stop();
+    void fetchJson(`/api/compare/${encodeURIComponent(id)}/cancel`, { method: "POST" }).catch(() => undefined);
+  }
+
   async function castVote(model: string) {
     setVote(model);
     await fetchJson(`/api/compare/${id}/vote`, { method: "PUT", body: JSON.stringify({ preferredModel: model }) }).catch(() => setVote(null));
@@ -176,8 +182,8 @@ export function RunView({ id }: { id: string }) {
           {info.systemPrompt && <p className="text-muted-foreground mt-2 text-sm">System prompt: {info.systemPrompt}</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {live && running && (
-            <Button variant="outline" size="sm" onClick={live.stop}>
+          {running && (
+            <Button variant="outline" size="sm" onClick={stopRun}>
               <Square /> Stop
             </Button>
           )}

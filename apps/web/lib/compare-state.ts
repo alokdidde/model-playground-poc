@@ -149,7 +149,11 @@ export function restoreCompareState(c: SavedComparison): CompareState {
   const panels = Object.fromEntries(
     c.models.map((model): [string, ModelPanel] => {
       const r = byModel.get(model);
-      if (!r) return [model, { model, status: "failed", output: "", problem: { type: "about:blank", title: "No result saved", status: 0 } }];
+      if (!r) {
+        // Still running in the background (the tab was closed or refreshed): show it as in progress.
+        if (c.status === "RUNNING" || c.status === "QUEUED") return [model, { model, status: "pending", output: "", note: "running on the server" }];
+        return [model, { model, status: "failed", output: "", problem: { type: "about:blank", title: "No result saved", status: 0 } }];
+      }
       const metrics: CallMetrics = {
         latencyMs: r.latencyMs,
         ttftMs: r.ttftMs ?? undefined,

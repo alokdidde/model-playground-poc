@@ -92,7 +92,7 @@ References:
 - **The confidence intervals are a normal approximation.** Judge scores are bounded integers, so the intervals are a guide, not a statistical test.
 - **This account can't call Anthropic or proprietary OpenAI models (403).** So the demo can't show "open model vs frontier model", which is the most common FOMO question.
 - **Costs use a static price table**, and tokens from failed attempts are not counted.
-- **A compare whose browser disconnects is cancelled**, not finished in the background.
+- **A compare reopened mid-run shows answers as they are saved**, not token by token; only the tab that started it streams live.
 
 ## Feedback for DigitalOcean
 

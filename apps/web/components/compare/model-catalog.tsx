@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Check, ChevronDown, Layers, Search } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, Layers, Plus, Search } from "lucide-react";
 import type { ModelInfo } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,13 +49,14 @@ function rank(m: ModelInfo, query: string): number {
 export function ModelCatalog({
   models,
   selectedIds,
-  canAddMore,
   onAdd,
+  onAddMany,
 }: {
   models: ModelInfo[];
   selectedIds: string[];
-  canAddMore: boolean;
   onAdd: (id: string) => void;
+  /** Adds every model in the list that can be compared. */
+  onAddMany: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [providers, setProviders] = useState<string[]>([]);
@@ -92,6 +93,9 @@ export function ModelCatalog({
     };
     return out.sort(sorters[sort]);
   }, [models, query, providers, tags, price, speed, sort, showAll]);
+
+  // What "Add all" would add: the models shown right now (after search and filters) that can be compared.
+  const addable = visible.filter((m) => m.kind === "chat" && m.available && !selectedIds.includes(m.id)).map((m) => m.id);
 
   const toggle = (list: string[], value: string, set: (v: string[]) => void) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -159,6 +163,11 @@ export function ModelCatalog({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          {addable.length > 1 && (
+            <Button variant="outline" size="sm" onClick={() => onAddMany(addable)}>
+              <Plus /> Add all {addable.length}
+            </Button>
+          )}
           {hiddenCount > 0 && (
             <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs" title="Models your plan can't call, and embedding / image / audio models">
               <Checkbox checked={showAll} onCheckedChange={(v) => setShowAll(v === true)} /> Show {hiddenCount} more
@@ -170,7 +179,7 @@ export function ModelCatalog({
       <ul className="max-h-[34rem] divide-y overflow-y-auto border-t lg:max-h-[calc(100vh-22rem)]">
         {visible.map((m) => {
           const added = selectedIds.includes(m.id);
-          const reason = m.kind !== "chat" ? "Not a chat model" : !m.available ? "Not available on your DO plan" : !canAddMore ? "Model limit reached" : undefined;
+          const reason = m.kind !== "chat" ? "Not a chat model" : !m.available ? "Not available on your DO plan" : undefined;
           return (
             <li key={m.id} className={cn("flex items-center gap-3 px-4 py-2.5", added && "bg-accent-soft/60")}>
               <ProviderAvatar provider={m.provider} />

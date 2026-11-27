@@ -56,7 +56,6 @@ export const CompareRequestSchema = z
     models: z
       .array(modelId)
       .min(1)
-      .max(LIMITS.maxModelsPerCompare)
       .refine((ids) => new Set(ids).size === ids.length, "Models must be unique"),
     maxTokens: z.number().int().min(16).max(LIMITS.maxOutputTokens).default(1024),
     temperature: z.number().min(0).max(2).default(0.7),
