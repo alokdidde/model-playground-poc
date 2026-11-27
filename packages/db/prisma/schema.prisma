@@ -81,6 +81,8 @@ model CompareResult {
   tokensEstimated Boolean
   costUsd         Float?
   attempts        Int
+  /// Set when a reasoning model ran out of tokens and was retried with this bigger max_tokens
+  maxTokensRaisedTo Int?
   createdAt       DateTime   @default(now())
 
   @@unique([comparisonId, model])
@@ -176,6 +178,8 @@ model EvalResult {
   tokensEstimated Boolean
   costUsd         Float?
   attempts        Int
+  /// Set when a reasoning model ran out of tokens and was retried with this bigger max_tokens
+  maxTokensRaisedTo Int?
   /// Judge's overall score (1-10), filled in after the judge step.
   score           Float?
   /// Judge's per-criterion scores: { accuracy, helpfulness, clarity }

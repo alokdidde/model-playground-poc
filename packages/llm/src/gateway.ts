@@ -40,6 +40,10 @@ export interface CallResult {
   metrics: CallMetrics;
 }
 
+/** On a "token_budget" failure, retry once with max_tokens times this, up to MAX_RAISED_TOKENS. */
+const TOKEN_BUDGET_GROWTH = 4;
+const MAX_RAISED_TOKENS = 8_192;
+
 const DEFAULTS = {
   attemptTimeoutMs: 60_000,
   firstTokenTimeoutMs: 20_000,
@@ -70,8 +74,8 @@ export class ModelGateway {
 
   /** Non-streaming call (used by the judge and the batch worker). */
   complete(request: ChatRequest, options: CallOptions = {}): Promise<CallResult> {
-    return this.run(request, options, async (signal) => {
-      const result = await this.provider.complete(request, signal);
+    return this.run(request, options, async (attemptRequest, signal) => {
+      const result = await this.provider.complete(attemptRequest, signal);
       if (result.rateLimits) this.observe(request.model, result.rateLimits);
       return { text: result.text, usage: result.usage };
     });
@@ -82,7 +86,7 @@ export class ModelGateway {
     const firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? DEFAULTS.firstTokenTimeoutMs;
     let sentSoFar = "";
 
-    return this.run(request, options, async (signal, startedAt) => {
+    return this.run(request, options, async (attemptRequest, signal, startedAt) => {
       // A separate controller so we can abort if the first token is too slow.
       const firstToken = new AbortController();
       const timer = setTimeout(
@@ -98,7 +102,7 @@ export class ModelGateway {
       let reasoned = false;
       let finishReason: string | undefined;
       try {
-        for await (const chunk of this.provider.stream(request, combined)) {
+        for await (const chunk of this.provider.stream(attemptRequest, combined)) {
           if (chunk.type === "usage") {
             usage = chunk.usage;
             continue;
@@ -144,8 +148,8 @@ export class ModelGateway {
       if (!text.trim() && finishReason === "length") {
         // Typical for reasoning models with a small max_tokens: all of it went on thinking.
         throw new UpstreamError(
-          "bad_output",
-          `Used all ${request.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
+          "token_budget",
+          `Used all ${attemptRequest.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
         );
       }
       return { text, usage, ttftMs, firstChunkAt, reasoned };
@@ -155,12 +159,14 @@ export class ModelGateway {
   private async run(
     request: ChatRequest,
     options: CallOptions,
-    attemptFn: (signal: AbortSignal, startedAt: number) => Promise<AttemptResult>,
+    attemptFn: (attemptRequest: ChatRequest, signal: AbortSignal, startedAt: number) => Promise<AttemptResult>,
   ): Promise<CallResult> {
     const maxAttempts = options.maxAttempts ?? DEFAULTS.maxAttempts;
     const attemptTimeoutMs = options.attemptTimeoutMs ?? DEFAULTS.attemptTimeoutMs;
+    // Only max_tokens ever changes between attempts (see "token_budget" below).
+    let current = request;
     for (let attempt = 1; ; attempt++) {
-      const lease = await this.limiter.acquire(request.model, reservationFor(request), {
+      const lease = await this.limiter.acquire(request.model, reservationFor(current), {
         signal: options.signal,
         maxWaitMs: options.maxQueueWaitMs ?? DEFAULTS.maxQueueWaitMs,
         onWait: options.onWait,
@@ -172,7 +178,7 @@ export class ModelGateway {
       const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
       try {
-        const { text, usage, ttftMs, firstChunkAt, reasoned } = await attemptFn(signal, attemptStartedAt);
+        const { text, usage, ttftMs, firstChunkAt, reasoned } = await attemptFn(current, signal, attemptStartedAt);
         const finishedAt = Date.now();
         const inputTokens = usage?.inputTokens ?? estimateInputTokens(request);
         const outputTokens = usage?.outputTokens ?? estimateTokens(text);
@@ -191,6 +197,7 @@ export class ModelGateway {
             tokensEstimated: usage === undefined,
             costUsd: estimateCostUsd(request.model, inputTokens, outputTokens),
             attempts: attempt,
+            ...(current.maxTokens !== request.maxTokens ? { maxTokensRaisedTo: current.maxTokens } : {}),
           },
         };
       } catch (rawError) {
@@ -201,6 +208,15 @@ export class ModelGateway {
         await this.releaseQuietly(lease, tokensChargedFor(error, lease));
 
         if (options.signal?.aborted) throw options.signal.reason ?? error;
+
+        // A reasoning model that thought until it hit max_tokens fails the same way every
+        // time, so a plain retry is pointless. One retry with a bigger budget usually works.
+        const raised = Math.min(request.maxTokens * TOKEN_BUDGET_GROWTH, MAX_RAISED_TOKENS);
+        if (error instanceof UpstreamError && error.kind === "token_budget" && current === request && raised > request.maxTokens && attempt < maxAttempts) {
+          current = { ...request, maxTokens: raised };
+          options.onRetry?.({ attempt, delayMs: 0, reason: `ran out of tokens while reasoning, retrying with max tokens ${raised}` });
+          continue;
+        }
         if (!(error instanceof UpstreamError) || !error.retryable || attempt >= maxAttempts) throw error;
 
         if (error.rateLimits) this.observe(request.model, error.rateLimits);

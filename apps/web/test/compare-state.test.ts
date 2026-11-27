@@ -61,6 +61,7 @@ describe("restoreCompareState", () => {
     tokensEstimated: false,
     costUsd: 0.001,
     attempts: 1,
+    maxTokensRaisedTo: null,
     ...over,
   });
   const saved: SavedComparison = {
@@ -84,6 +85,7 @@ describe("restoreCompareState", () => {
     expect(s.order).toEqual(["a", "b", "c"]);
     expect(s.panels.a).toMatchObject({ status: "done", output: "answer a", metrics: { ttftMs: 200, outputTokensPerSec: undefined } });
     expect(s.panels.b).toMatchObject({ status: "failed", problem: { title: "boom" } });
+    expect(s.panels.b!.metrics).toBeUndefined(); // failed calls stay out of charts and "best" picks
     expect(s.panels.c).toMatchObject({ status: "failed", problem: { title: "No result saved" } });
     expect(s.judge.verdict?.winnerModel).toBe("a");
     expect(s.synthesis).toMatchObject({ status: "done", output: "merged" });

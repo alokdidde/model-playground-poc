@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Crown, History, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,19 +19,17 @@ interface Summary {
   preferredModel: string | null;
 }
 
-/** Past compares, newest first. Picking one reopens its full results on the Compare page. */
+/** Past compares, newest first. Each opens its run page with the full results. */
 export function RunHistory({
   open,
   onOpenChange,
   currentId,
   label,
-  onPick,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentId?: string;
   label: (id: string) => string;
-  onPick: (id: string) => void;
 }) {
   const [items, setItems] = useState<Summary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -77,10 +76,10 @@ export function RunHistory({
           <ul className="divide-y">
             {items.map((run) => (
               <li key={run.id}>
-                <button
-                  type="button"
-                  onClick={() => onPick(run.id)}
-                  className={cn("hover:bg-muted/60 w-full space-y-1.5 px-4 py-3 text-left", run.id === currentId && "bg-accent-soft/60")}
+                <Link
+                  href={`/runs/${run.id}`}
+                  onClick={() => onOpenChange(false)}
+                  className={cn("hover:bg-muted/60 block space-y-1.5 px-4 py-3", run.id === currentId && "bg-accent-soft/60")}
                 >
                   <div className="line-clamp-2 text-sm font-medium">{run.prompt}</div>
                   <div className="text-muted-foreground text-xs">
@@ -95,7 +94,7 @@ export function RunHistory({
                     {run.preferredModel && <Badge variant="outline">Your pick: {label(run.preferredModel)}</Badge>}
                     {run.status !== "COMPLETED" && <Badge variant="outline">{run.status.toLowerCase()}</Badge>}
                   </div>
-                </button>
+                </Link>
               </li>
             ))}
           </ul>

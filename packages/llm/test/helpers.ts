@@ -6,23 +6,26 @@ import type { ChatProvider, ChatRequest, ChatResult, StreamChunk } from "../src/
 export class ScriptedProvider implements ChatProvider {
   readonly name = "scripted";
   calls = 0;
+  /** max_tokens of each attempt, to check budget changes. */
+  maxTokens: number[] = [];
   constructor(private readonly script: (() => AsyncGenerator<StreamChunk>)[]) {}
 
   async listModels(): Promise<ModelInfo[]> {
     return [];
   }
 
-  async complete(): Promise<ChatResult> {
+  async complete(request?: ChatRequest): Promise<ChatResult> {
     let text = "";
     let usage: ChatResult["usage"];
-    for await (const c of this.stream()) {
+    for await (const c of this.stream(request)) {
       if (c.type === "delta") text += c.text;
       else if (c.type === "usage") usage = c.usage;
     }
     return { text, usage };
   }
 
-  stream(): AsyncIterable<StreamChunk> {
+  stream(request?: ChatRequest): AsyncIterable<StreamChunk> {
+    if (request) this.maxTokens.push(request.maxTokens);
     const step = this.script[Math.min(this.calls, this.script.length - 1)]!;
     this.calls++;
     return step();

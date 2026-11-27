@@ -221,6 +221,8 @@ export interface CallMetrics {
   /** Null when we do not know the model's price. */
   costUsd: number | null;
   attempts: number;
+  /** Set when a reasoning model ran out of tokens and was retried with this bigger max_tokens. */
+  maxTokensRaisedTo?: number;
 }
 
 export interface JudgeScore {

@@ -57,7 +57,7 @@ export class GradientProvider implements ChatProvider {
       const choice = response.choices[0];
       if (!choice?.message?.content?.trim() && choice?.finish_reason === "length") {
         throw new UpstreamError(
-          "bad_output",
+          "token_budget",
           `Used all ${request.maxTokens} max tokens on reasoning before writing an answer. Raise max tokens or lower the reasoning level.`,
         );
       }

@@ -99,14 +99,24 @@ describe("ModelGateway", () => {
     expect(provider.calls).toBe(1);
   });
 
-  it("fails clearly when the whole token budget went on reasoning", async () => {
-    async function* allThinking() {
-      yield { type: "thinking" as const };
-      yield { type: "finish" as const, reason: "length" };
-    }
+  async function* allThinking() {
+    yield { type: "thinking" as const };
+    yield { type: "finish" as const, reason: "length" };
+  }
+
+  it("retries once with a bigger budget when a reasoning model runs out of tokens", async () => {
+    const provider = new ScriptedProvider([allThinking, ok]);
+    const reasons: string[] = [];
+    const result = await new ModelGateway(provider, limiter()).stream(request, () => {}, { onRetry: (r) => reasons.push(r.reason) });
+    expect(provider.maxTokens).toEqual([32, 128]);
+    expect(result.metrics).toMatchObject({ attempts: 2, maxTokensRaisedTo: 128 });
+    expect(reasons[0]).toMatch(/ran out of tokens while reasoning/);
+  });
+
+  it("fails clearly if the bigger budget runs out too, without retrying again", async () => {
     const provider = new ScriptedProvider([allThinking]);
-    await expect(new ModelGateway(provider, limiter()).stream(request, () => {})).rejects.toThrow(/on reasoning/);
-    expect(provider.calls).toBe(1); // not retryable: it would fail the same way
+    await expect(new ModelGateway(provider, limiter()).stream(request, () => {})).rejects.toThrow(/Used all 128 max tokens on reasoning/);
+    expect(provider.calls).toBe(2); // the same budget would fail the same way
   });
 
   it("feeds rate-limit headers to the limiter and takes leases in the caller's lane", async () => {

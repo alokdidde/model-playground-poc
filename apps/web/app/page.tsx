@@ -58,7 +58,7 @@ export default async function HomePage() {
             <ul className="divide-y">
               {recent.items.map((run) => (
                 <li key={run.id}>
-                  <Link href={`/compare?run=${run.id}`} className="hover:bg-muted/60 block space-y-1 px-4 py-3">
+                  <Link href={`/runs/${run.id}`} className="hover:bg-muted/60 block space-y-1 px-4 py-3">
                     <div className="line-clamp-1 text-sm font-medium">{run.prompt}</div>
                     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                       <span>{timeAgo(run.createdAt)}</span>

@@ -4,7 +4,15 @@ import type { ObservedLimits } from "@fomo/ratelimit";
  * A failure talking to the model provider, normalised so the retry logic
  * does not need to know about SDK-specific error classes.
  */
-export type UpstreamErrorKind = "rate_limited" | "timeout" | "server" | "network" | "client" | "bad_output";
+export type UpstreamErrorKind =
+  | "rate_limited"
+  | "timeout"
+  | "server"
+  | "network"
+  | "client"
+  | "bad_output"
+  /** A reasoning model spent all of max_tokens thinking. Only a bigger budget helps; the gateway handles that. */
+  | "token_budget";
 
 const RETRYABLE_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 
@@ -33,7 +41,7 @@ export class UpstreamError extends Error {
 
   /** 4xx errors (bad request, unknown model, auth) will fail the same way again. */
   get retryable(): boolean {
-    if (this.kind === "client" || this.kind === "bad_output") return false;
+    if (this.kind === "client" || this.kind === "bad_output" || this.kind === "token_budget") return false;
     if (this.status !== undefined) return RETRYABLE_STATUSES.has(this.status);
     return true; // timeouts and network errors
   }

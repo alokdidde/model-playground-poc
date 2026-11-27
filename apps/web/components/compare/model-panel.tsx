@@ -106,7 +106,9 @@ export function ModelPanel({
       </CardContent>
 
       <CardFooter className="flex-col items-stretch gap-3 border-t pt-3">
-        {panel.metrics ? (
+        {panel.status === "failed" ? (
+          <span className="text-muted-foreground text-xs">No answer, so nothing to measure.</span>
+        ) : panel.metrics ? (
           <>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
               <Stat label="First token" value={formatMs(panel.metrics.ttftMs)} best={wins.has("ttftMs")} hint="Time until the answer starts to appear" />
@@ -123,6 +125,11 @@ export function ModelPanel({
               {panel.metrics.inputTokens} tokens in · {panel.metrics.outputTokens} tokens out{panel.metrics.tokensEstimated ? " (estimated)" : ""}
               {panel.metrics.attempts > 1 && ` · ${panel.metrics.attempts} attempts`}
             </p>
+            {panel.metrics.maxTokensRaisedTo && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Ran out of tokens while reasoning, so it was retried with max tokens {panel.metrics.maxTokensRaisedTo}. Only the retry is counted above.
+              </p>
+            )}
           </>
         ) : (
           <span className="text-muted-foreground text-xs">No metrics yet</span>

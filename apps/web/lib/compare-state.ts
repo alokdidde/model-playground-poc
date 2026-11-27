@@ -123,6 +123,7 @@ export interface SavedComparison {
     tokensEstimated: boolean;
     costUsd: number | null;
     attempts: number;
+    maxTokensRaisedTo: number | null;
   }[];
   judgement: {
     judgeModel: string;
@@ -157,8 +158,10 @@ export function restoreCompareState(c: SavedComparison): CompareState {
         tokensEstimated: r.tokensEstimated,
         costUsd: r.costUsd,
         attempts: r.attempts,
+        ...(r.maxTokensRaisedTo ? { maxTokensRaisedTo: r.maxTokensRaisedTo } : {}),
       };
-      return [model, r.status === "SUCCEEDED" ? { model, status: "done", output: r.output, metrics } : { model, status: "failed", output: r.output, metrics, problem: r.problem ?? undefined }];
+      // A failed call has no real metrics (the row stores zeros), so it must not show up in charts or "best" picks.
+      return [model, r.status === "SUCCEEDED" ? { model, status: "done", output: r.output, metrics } : { model, status: "failed", output: r.output, problem: r.problem ?? undefined }];
     }),
   );
   const j = c.judgement;

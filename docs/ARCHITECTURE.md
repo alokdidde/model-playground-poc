@@ -86,6 +86,8 @@ Splitting `llm` and `ratelimit` out of the web app is what lets the worker reuse
 
 ## 3. Interactive path: `POST /api/compare`
 
+Pages: `/` offers the two ways in and the latest runs; `/compare` is only the setup form; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/compare?from=:id` with the form filled in.
+
 ```mermaid
 sequenceDiagram
   participant C as Browser
@@ -204,7 +206,7 @@ The UI disables unsupported controls with the reason, the server rejects explici
 
 ### Reasoning models and timeouts
 
-Reasoning models (GLM, Kimi, DeepSeek, gpt-oss) stream hidden "thinking" before any answer text, sometimes for 20-30 s. The original first-token timeout (20 s) killed them before they answered. The provider now reports reasoning chunks as a liveness signal (`{type: "thinking"}`), which stops the first-token timer without counting as TTFT. And if a model spends its whole `max_tokens` on reasoning (`finish_reason: "length"` with no text), the call fails with a clear, non-retryable message ("raise max tokens or lower the reasoning level") instead of showing an empty "Done" panel. The default max tokens in the UI is 2048 for this reason.
+Reasoning models (GLM, Kimi, DeepSeek, gpt-oss) stream hidden "thinking" before any answer text, sometimes for 20-30 s. The original first-token timeout (20 s) killed them before they answered. The provider now reports reasoning chunks as a liveness signal (`{type: "thinking"}`), which stops the first-token timer without counting as TTFT. If a model spends its whole `max_tokens` on reasoning (`finish_reason: "length"` with no text), the provider raises a `token_budget` error instead of returning an empty answer. A plain retry would fail the same way, so the gateway retries **once with 4x the budget (capped at 8,192)**, reports "ran out of tokens while reasoning, retrying with max tokens N" while it waits, and records `maxTokensRaisedTo` on the result, so the answer card says so. If the bigger budget runs out too, the call fails with a clear message ("raise max tokens or lower the reasoning level"). The default max tokens in the UI is 2048: enough for most answers, and the retry covers the heavy thinkers without making every call reserve (and wait for) 8k tokens.
 
 ## 4. Reliability: the `ModelGateway`
 
@@ -225,6 +227,25 @@ if the server sent Retry-After / retry-after-ms:
 ```
 
 Full jitter (randomising the whole delay, not adding a little noise) spreads retries from many clients evenly, so they don't all hit the provider again at the same instant after a shared 429. The OpenAI SDK's built-in retries are turned off (`maxRetries: 0`) so attempts don't multiply across two layers.
+
+### Retry policy, end to end
+
+The rule: retry what a second attempt can fix; fail fast and clearly on what it can't; never show a user the same text twice.
+
+| Failure | What happens | Why |
+| --- | --- | --- |
+| 429 rate limited | Retried with backoff, never sooner than `Retry-After`. Sets a shared cooldown and halves the bucket's AIMD factor. | Capacity comes back; every instance should slow down, not just this one. |
+| 5xx, 529, 408/409/425, timeouts, network errors | Retried with backoff and full jitter. Compare: up to 3 attempts, 60 s each. Batch: 5 attempts, 120 s each. | Usually transient. |
+| No first token in 20 s (60 s in batch) | Counts as a timeout and is retried. Reasoning chunks count as "alive". | A hung connection looks like silence; a thinking model does not. |
+| Reasoning used all of `max_tokens` | One retry with 4x the budget (max 8,192), shown on the card. | The same request fails the same way; a bigger budget is the fix. |
+| Other 4xx (bad request, unknown model, plan not allowed) | Not retried; shown as a problem with the model's name. | It would fail identically. |
+| Stream drops after text was shown (compare) | Not retried; the partial answer stays, marked failed. | Retrying would repeat text on screen. Batch evals have no viewer, so they restart the stream (`restartInterruptedStreams`). |
+| One model fails | The others carry on; the run ends `PARTIAL`. The judge and synthesis need two answers, and failed models are left out of every chart and "best" pick. | One bad model must not hide the rest. |
+| Judge returns bad JSON | Asked once more; if it still fails, the answers and metrics stand without scores. | The judge is a second opinion, not a dependency. |
+| Worker crashes mid-eval | DBOS resumes the workflow from its last finished step; each step is also retried 3 times. | Batch work is durable by design. |
+| User closes the tab or presses Stop | The server's calls are aborted (no tokens wasted) and the run is saved as `CANCELLED`. | Nobody is waiting for the answer. |
+
+Known gaps: the tokens spent by a failed attempt are not added to the run's cost (only the successful attempt is measured), and a compare whose browser disconnects mid-run is cancelled rather than finished in the background (refreshing the run page mid-stream shows what was saved so far). Running compares as background jobs that the page subscribes to would close that gap, at the cost of a pub/sub hop.
 
 ### Staying under the limits: leasing
 
