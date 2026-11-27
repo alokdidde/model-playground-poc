@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, History, Loader2, Pencil, Square } from "lucide-react";
+import { ArrowLeft, Check, History, Link2, Loader2, Pencil, Square } from "lucide-react";
 import { TASK_TYPE_IDS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type Problem, type TaskType } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,14 @@ import { MetricsTable } from "@/components/compare/metrics-table";
 import { ModelPanel, type Rating } from "@/components/compare/model-panel";
 import { RecommendationCard } from "@/components/compare/recommendation-card";
 import { RunHistory } from "@/components/compare/run-history";
+import { AnswerSort } from "@/components/run/answer-sort";
 import { SynthesisCard } from "@/components/compare/synthesis-card";
 import { fetchJson, ProblemError } from "@/lib/api-client";
 import { restoreCompareState, type SavedComparison } from "@/lib/compare-state";
 import { getLiveRun, subscribeLiveRuns } from "@/lib/live-run";
 import { winsByModel, type MetricKey } from "@/lib/metrics";
 import { PRIORITY_WEIGHTS, TASK_DEFAULT_PRIORITY } from "@/lib/recommend";
+import { SORT_OPTIONS, sortModels, type SortKey } from "@/lib/run-sort";
 import { timeAgo } from "@/lib/utils";
 
 /** What was sent, whether we read it from the live request or the saved run. */
@@ -102,6 +104,30 @@ export function RunView({ id }: { id: string }) {
   const [customPriority, setCustomPriority] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showFullPrompt, setShowFullPrompt] = useState(false);
+  const [copied, setCopied] = useState(false);
+  // The sort lives in the URL (?sort=cost&then=ttft), so a shared link opens sorted the same way.
+  const [sort, setSort] = useState<{ primary: SortKey; secondary: SortKey }>({ primary: "order", secondary: "order" });
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const valid = (k: string | null): k is SortKey => SORT_OPTIONS.some((o) => o.key === k);
+    const primary = q.get("sort");
+    const secondary = q.get("then");
+    if (valid(primary)) setSort({ primary, secondary: valid(secondary) && secondary !== primary ? secondary : "order" });
+  }, []);
+  function changeSort(primary: SortKey, secondary: SortKey) {
+    setSort({ primary, secondary });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("sort");
+    url.searchParams.delete("then");
+    if (primary !== "order") url.searchParams.set("sort", primary);
+    if (primary !== "order" && secondary !== "order") url.searchParams.set("then", secondary);
+    window.history.replaceState(null, "", url);
+  }
+  async function copyLink() {
+    await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2_000);
+  }
 
   if (loadError) {
     return (
@@ -134,6 +160,7 @@ export function RunView({ id }: { id: string }) {
   // Only once every model is done, so a model that finishes early is not shown as "best" too soon.
   const wins = finished ? winsByModel(metricRows) : new Map<string, Set<MetricKey>>();
   const answered = state.order.filter((m) => ["done", "failed"].includes(state.panels[m]?.status ?? "")).length;
+  const sortedModels = sortModels(sort.primary, sort.secondary, { order: state.order, metrics, scores, priority });
   const longPrompt = info.prompt.length > 280 || info.prompt.split("\n").length > 5;
 
   // Works for a run streaming in this tab and for one left running when the tab was closed.
@@ -192,6 +219,9 @@ export function RunView({ id }: { id: string }) {
               <Pencil /> Edit and rerun
             </Link>
           </Button>
+          <Button variant="outline" size="sm" onClick={copyLink} title="Copy a link to this run to share it">
+            {copied ? <Check /> : <Link2 />} {copied ? "Link copied" : "Copy link"}
+          </Button>
           <Link href={`/ops/rate-limits?tag=${encodeURIComponent(id)}`} className="text-muted-foreground hover:text-foreground text-sm underline">
             Rate-limit timeline
           </Link>
@@ -226,9 +256,14 @@ export function RunView({ id }: { id: string }) {
       {finished && <MetricsTable rows={metricRows} catalog={catalog} label={label} colorOf={colorOf} scores={scores} />}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Answers</h2>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h2 className="text-lg font-semibold">Answers</h2>
+          {state.order.length > 1 && (
+            <AnswerSort primary={sort.primary} secondary={sort.secondary} onChange={changeSort} combinedAvailable={scores.size > 0} />
+          )}
+        </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {state.order.map((m) => (
+          {sortedModels.map((m) => (
             <ModelPanel
               key={m}
               panel={state.panels[m]!}
