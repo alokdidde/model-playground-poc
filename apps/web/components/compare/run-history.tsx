@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Crown, History, Loader2, X } from "lucide-react";
+import { CircleCheck, CircleX, Crown, History, Loader2, Trophy, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
@@ -88,10 +88,15 @@ export function RunHistory({
                   <div className="flex flex-wrap gap-1">
                     {run.winnerModel && (
                       <Badge variant="secondary">
-                        <Crown /> Judge: {label(run.winnerModel)}
+                        <Trophy /> Judge: {label(run.winnerModel)}
                       </Badge>
                     )}
-                    {run.preferredModel && <Badge variant="outline">Your pick: {label(run.preferredModel)}</Badge>}
+                    {run.preferredModel && (
+                      <Badge variant="outline" title={run.winnerModel ? (run.preferredModel === run.winnerModel ? "You and the judge agree" : "You and the judge disagree") : undefined}>
+                        <Crown /> Your pick: {label(run.preferredModel)}
+                        {run.winnerModel && (run.preferredModel === run.winnerModel ? <CircleCheck className="text-emerald-600" /> : <CircleX className="text-amber-600" />)}
+                      </Badge>
+                    )}
                     {run.status !== "COMPLETED" && <Badge variant="outline">{run.status.toLowerCase()}</Badge>}
                   </div>
                 </Link>

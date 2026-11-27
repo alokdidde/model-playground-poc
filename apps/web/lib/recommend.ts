@@ -36,22 +36,61 @@ export function normalise(w: PriorityWeights): PriorityWeights {
   return { quality: w.quality / sum, cost: w.cost / sum, speed: w.speed / sum };
 }
 
+const KEYS = ["quality", "cost", "speed"] as const;
+
+/**
+ * Sets one weight to `share` (0..1) and splits the rest between the other two
+ * in their current ratio (evenly if both are zero). The result always sums to
+ * 1, so each custom slider shows its real share of 100%.
+ */
+export function setWeight(w: PriorityWeights, key: keyof PriorityWeights, share: number): PriorityWeights {
+  const v = Math.min(1, Math.max(0, share));
+  const n = normalise(w);
+  const others = KEYS.filter((k) => k !== key);
+  const rest = others.reduce((s, k) => s + n[k], 0);
+  const next = { ...n, [key]: v };
+  for (const k of others) next[k] = rest > 0 ? ((1 - v) * n[k]) / rest : (1 - v) / others.length;
+  return next;
+}
+
+/** Whole percentages that add up to exactly 100 (largest remainder). */
+export function percentages(w: PriorityWeights): Record<keyof PriorityWeights, number> {
+  const n = normalise(w);
+  const raw = KEYS.map((k) => ({ k, x: n[k] * 100 }));
+  const out = Object.fromEntries(raw.map(({ k, x }) => [k, Math.floor(x)])) as Record<keyof PriorityWeights, number>;
+  let left = 100 - KEYS.reduce((s, k) => s + out[k], 0);
+  for (const { k } of [...raw].sort((a, b) => (b.x % 1) - (a.x % 1))) {
+    if (left-- <= 0) break;
+    out[k] += 1;
+  }
+  return out;
+}
+
 export interface Candidate {
   model: string;
   score: JudgeScore;
   metrics: CallMetrics;
 }
 
+/**
+ * Outside a cost-first priority, never recommend an answer the judge scored
+ * this many points (or more) below the best one. Without it, a 6x price gap
+ * on a fraction of a cent can outvote a clearly worse answer.
+ */
+export const QUALITY_GUARD_POINTS = 2;
+
 export interface Recommendation {
   pick: string;
   /** The highest-quality answer, used as the reference point. */
   best: string;
-  /** pick's quality as a share of best's (0..1). */
-  relativeQuality: number;
+  /** best's score minus pick's score, in judge points (0 when pick is best). */
+  scoreGap: number;
   /** best's cost divided by pick's cost (e.g. 10 = a tenth of the cost); null if unknown. */
   costRatio: number | null;
   /** best's latency divided by pick's latency. */
   speedRatio: number;
+  /** True when the quality guard overruled the weighted pick. */
+  guarded: boolean;
 }
 
 /**
@@ -80,30 +119,37 @@ export function rankCandidates(candidates: Candidate[], weights: PriorityWeights
 
 export function recommend(candidates: Candidate[], weights: PriorityWeights | Priority): Recommendation | null {
   if (candidates.length === 0) return null;
+  const w = normalise(typeof weights === "string" ? PRIORITY_WEIGHTS[weights] : weights);
   const byQuality = [...candidates].sort((a, b) => b.score.overall - a.score.overall || a.metrics.latencyMs - b.metrics.latencyMs);
   const best = byQuality[0]!;
-  const pickId = rankCandidates(candidates, weights)[0]!.model;
-  const pick = candidates.find((c) => c.model === pickId)!;
+  const ranked = rankCandidates(candidates, weights);
+  const byId = new Map(candidates.map((c) => [c.model, c]));
+  // Cost-first priorities may trade quality away on purpose; everything else stays within the guard.
+  const guardOn = w.cost <= w.quality;
+  const withinGuard = (c: Candidate) => best.score.overall - c.score.overall < QUALITY_GUARD_POINTS;
+  const top = byId.get(ranked[0]!.model)!;
+  const pick = guardOn ? byId.get(ranked.find((r) => withinGuard(byId.get(r.model)!))!.model)! : top;
 
   const pickCost = pick.metrics.costUsd;
   const bestCost = best.metrics.costUsd;
   return {
     pick: pick.model,
     best: best.model,
-    relativeQuality: best.score.overall > 0 ? pick.score.overall / best.score.overall : 1,
+    scoreGap: Math.round((best.score.overall - pick.score.overall) * 10) / 10,
     costRatio: pickCost && bestCost ? bestCost / pickCost : null,
     speedRatio: pick.metrics.latencyMs > 0 ? best.metrics.latencyMs / pick.metrics.latencyMs : 1,
+    guarded: pick.model !== top.model,
   };
 }
 
-/** One plain sentence for the UI, e.g. "GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th the cost." */
+/** One plain sentence for the UI, e.g. "GLM-5.3 Flash scored 8 vs 9 for DeepSeek, at 1/10th of the cost." */
 export function describeRecommendation(r: Recommendation, label: (id: string) => string): string {
-  if (r.pick === r.best) return `${label(r.pick)} gave the best answer, and nothing else was better value for this priority.`;
+  if (r.pick === r.best) return `${label(r.pick)} gave the best answer.`;
   const parts: string[] = [];
   if (r.costRatio !== null && r.costRatio >= 1.2) parts.push(`${formatRatio(r.costRatio)} the cost`);
   if (r.speedRatio >= 1.2) parts.push(`${r.speedRatio.toFixed(1)}x faster`);
-  const pct = Math.round(r.relativeQuality * 100);
-  return `${label(r.pick)} is ${pct}% as good as ${label(r.best)}${parts.length ? ` at ${parts.join(" and ")}` : ""}.`;
+  const pickScore = r.scoreGap === 0 ? "the same score as" : `${r.scoreGap} point${r.scoreGap === 1 ? "" : "s"} below`;
+  return `${label(r.pick)} scored ${pickScore} ${label(r.best)}${parts.length ? `, at ${parts.join(" and ")}` : ""}.`;
 }
 
 function formatRatio(ratio: number): string {

@@ -6,7 +6,7 @@ About 5 minutes on the live app: https://model-fomo-qlrb3.ondigitalocean.app. Op
 
 > Customers on DigitalOcean can call dozens of models with one key. That makes switching cheap, but choosing hard: "did I pick the right model, or am I overpaying?" That's Model FOMO.
 >
-> One prompt answered by five models is a demo, not a decision. So the PoC goes in three steps. **Show me**: run one prompt on several DO models side by side, with cost and speed. **Combine it**: a neutral judge scores the answers, a synthesizer merges them with citations, and a recommendation turns that into "use X, it's 95% as good at a tenth of the cost". **Learn from it**: every compare is saved with its own page, and batch evals over the customer's own prompts come next.
+> One prompt answered by five models is a demo, not a decision. So the PoC goes in three steps. **Show me**: run one prompt on several DO models side by side, with cost and speed. **Combine it**: a neutral judge scores the answers, a synthesizer merges them with citations, and a recommendation turns that into "use X, it scores 1 point below the best at a tenth of the cost". **Learn from it**: every compare is saved with its own page, and batch evals over the customer's own prompts come next.
 >
 > Everything runs on DO: serverless inference for the models, App Platform for the web app, and Managed Postgres for data and shared rate limiting.
 

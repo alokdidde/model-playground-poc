@@ -7,7 +7,7 @@ The one-page version of the design. [ARCHITECTURE.md](ARCHITECTURE.md) has the d
 Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* One prompt answered by five models is a demo. A decision needs evidence. So the PoC goes in three steps:
 
 1. **Show me.** Send one prompt to several DO models at once and watch them stream side by side, with cost, speed and tokens.
-2. **Combine it.** Get one view across the answers: a neutral judge scores them, a synthesizer merges them with citations, and a recommendation weighs quality against cost and speed ("X is 95% as good at 1/10th of the cost").
+2. **Combine it.** Get one view across the answers: a neutral judge scores them, a synthesizer merges them with citations, and a recommendation weighs quality against cost and speed ("X scores 1 point below the best at 1/10th of the cost").
 3. **Learn from it.** Every compare is saved with its answers, scores and metrics, and has its own page. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
 
 ## What I built

@@ -3,7 +3,7 @@
 import { SlidersHorizontal } from "lucide-react";
 import type { PriorityWeights } from "@fomo/shared";
 import { Slider } from "@/components/ui/slider";
-import { normalise, presetFor, PRIORITY_WEIGHTS, type Priority } from "@/lib/recommend";
+import { normalise, percentages, presetFor, PRIORITY_WEIGHTS, setWeight, type Priority } from "@/lib/recommend";
 import { cn } from "@/lib/utils";
 
 const PRESETS: { value: Priority; label: string }[] = [
@@ -15,7 +15,8 @@ const PRESETS: { value: Priority; label: string }[] = [
 
 /**
  * "What matters most?" Presets for the common cases, plus a Custom mode with
- * three sliders. The weights are normalised, so only their ratio matters.
+ * three sliders. The sliders always add up to 100%: moving one rebalances the
+ * other two in proportion, so each thumb shows its real share.
  */
 export function PriorityPicker({
   value,
@@ -31,7 +32,8 @@ export function PriorityPicker({
   size?: "sm" | "md";
 }) {
   const active = custom ? null : presetFor(value);
-  const pct = normalise(value);
+  const share = normalise(value);
+  const pct = percentages(value);
   return (
     <div className="space-y-3">
       <div className="bg-background inline-flex flex-wrap rounded-lg border p-0.5" role="radiogroup" aria-label="What matters most">
@@ -74,18 +76,15 @@ export function PriorityPicker({
             <label key={k} className="grid grid-cols-[4.5rem_1fr_2.5rem] items-center gap-3 text-sm capitalize">
               {k}
               <Slider
-                value={[value[k]]}
+                value={[share[k]]}
                 min={0}
                 max={1}
-                step={0.05}
-                onValueChange={([v]) => {
-                  const next = { ...value, [k]: v ?? 0 };
-                  // Keep at least one weight above zero (the API requires it).
-                  if (next.quality + next.cost + next.speed > 0) onChange(next);
-                }}
+                step={0.01}
+                onValueChange={([v]) => onChange(setWeight(value, k, v ?? 0))}
                 aria-label={`${k} weight`}
+                valueText={`${pct[k]}%`}
               />
-              <span className="text-muted-foreground text-right text-xs tabular-nums">{Math.round(pct[k] * 100)}%</span>
+              <span className="text-muted-foreground text-right text-xs tabular-nums">{pct[k]}%</span>
             </label>
           ))}
         </div>
