@@ -23,6 +23,19 @@ describe("RateLimiter", () => {
     await expect(limiter.acquire("m", 10, { maxWaitMs: 50 })).rejects.toBeInstanceOf(RateLimitExceededError);
   });
 
+  it("stretches a lease to outlive its holder's call timeout, so a slow call keeps its slot", async () => {
+    const shortTtl = { ...limits, leaseTtlMs: 50 };
+    const plain = new RateLimiter(new MemoryLeaseStore(), shortTtl);
+    await plain.acquire("m", 10, { maxWaitMs: 1_000 });
+    await new Promise((r) => setTimeout(r, 80));
+    await expect(plain.acquire("m", 10, { maxWaitMs: 10 })).resolves.toBeDefined(); // expired: slot freed
+
+    const held = new RateLimiter(new MemoryLeaseStore(), shortTtl);
+    await held.acquire("m", 10, { maxWaitMs: 1_000, holdMs: 1_000 });
+    await new Promise((r) => setTimeout(r, 80));
+    await expect(held.acquire("m", 10, { maxWaitMs: 10 })).rejects.toBeInstanceOf(RateLimitExceededError); // still held
+  });
+
   it("rejects a request that can never fit", async () => {
     const limiter = new RateLimiter(new MemoryLeaseStore(), limits);
     await expect(limiter.acquire("m", 5_000, { maxWaitMs: 1_000 })).rejects.toMatchObject({ reason: "too_large" });
