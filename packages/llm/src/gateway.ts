@@ -9,7 +9,7 @@ import {
 } from "@fomo/ratelimit";
 import { estimateCostUsd } from "./catalog";
 import { StreamInterruptedError, UpstreamError } from "./errors";
-import { estimateInputTokens, estimateTokens, reservationFor } from "./tokens";
+import { estimateInputTokens, estimateTokens, reservationFor, TokenCalibration } from "./tokens";
 import type { ChatProvider, ChatRequest, ResponseMeta, Usage } from "./types";
 
 export interface CallOptions {
@@ -59,6 +59,9 @@ const DEFAULTS = {
  * otherwise we would duplicate text on screen.
  */
 export class ModelGateway {
+  /** Corrects our rough token estimates per model from the usage the provider reports. */
+  readonly calibration = new TokenCalibration();
+
   constructor(
     readonly provider: ChatProvider,
     readonly limiter: RateLimiter,
@@ -166,9 +169,12 @@ export class ModelGateway {
     // Only max_tokens ever changes between attempts (see "token_budget" below).
     let current = request;
     for (let attempt = 1; ; attempt++) {
-      const lease = await this.limiter.acquire(request.model, reservationFor(current), {
+      const ratio = this.calibration.ratio(request.model);
+      const lease = await this.limiter.acquire(request.model, reservationFor(current, ratio), {
         signal: options.signal,
         maxWaitMs: maxQueueWaitMs,
+        // The attempt is aborted at attemptTimeoutMs, so the lease must outlive it.
+        holdMs: attemptTimeoutMs,
         onWait: options.onWait,
         tag: options.tag,
       });
@@ -180,8 +186,10 @@ export class ModelGateway {
       try {
         const { text, usage, ttftMs, firstChunkAt, reasoned, meta } = await attemptFn(current, signal, attemptStartedAt);
         const finishedAt = Date.now();
-        const inputTokens = usage?.inputTokens ?? estimateInputTokens(request);
-        const outputTokens = usage?.outputTokens ?? estimateTokens(text);
+        const estimatedInput = estimateInputTokens(request);
+        if (usage) this.calibration.observe(request.model, estimatedInput, usage.inputTokens);
+        const inputTokens = usage?.inputTokens ?? Math.ceil(estimatedInput * ratio);
+        const outputTokens = usage?.outputTokens ?? Math.ceil(estimateTokens(text) * ratio);
         events.emit({ ...ev, kind: "attempt_ok", attempt, ms: finishedAt - attemptStartedAt, data: { ttftMs, inputTokens, outputTokens, ...meta } });
         await this.releaseQuietly(lease, inputTokens + outputTokens);
         return {

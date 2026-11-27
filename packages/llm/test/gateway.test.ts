@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryEventSink } from "@fomo/ratelimit";
 import { ModelGateway, resetOfSpentCounter, tokensPerSecond } from "../src/gateway";
 import { StreamInterruptedError, UpstreamError } from "../src/errors";
+import { estimateTokens, TokenCalibration } from "../src/tokens";
 import { ScriptedProvider, limiter, request } from "./helpers";
 
 async function* ok() {
@@ -126,7 +127,7 @@ describe("ModelGateway", () => {
 
   it("estimates usage when the provider reports none, and records ttft", async () => {
     async function* noUsage() {
-      yield { type: "delta" as const, text: "abcdefgh" };
+      yield { type: "delta" as const, text: "hello world" };
     }
     const result = await new ModelGateway(new ScriptedProvider([noUsage]), limiter()).stream(request, () => {});
     expect(result.metrics.tokensEstimated).toBe(true);
@@ -191,5 +192,42 @@ describe("ModelGateway", () => {
     expect(result.metrics.outputTokensPerSec).toBeLessThan(220);
     expect(tokensPerSecond(100, 1_000, 3_000)).toBe(50);
     expect(tokensPerSecond(100, undefined, 3_000)).toBeUndefined(); // not streamed
+  });
+});
+
+describe("estimateTokens", () => {
+  it("counts with a real tokenizer, so code and non-English text are not undercounted", () => {
+    expect(estimateTokens("hello world")).toBe(2);
+    // "4 characters per token" would say 12 and 5.
+    expect(estimateTokens("for (let i = 0; i < n; i++) { a[i] = b[i] * 2; }")).toBe(27);
+    expect(estimateTokens("进程和线程有什么区别？请各举一个例子。")).toBe(14);
+  });
+});
+
+describe("TokenCalibration", () => {
+  it("learns how far the o200k count is off, per model", () => {
+    const c = new TokenCalibration();
+    expect(c.ratio("m")).toBe(1);
+    c.observe("m", 100, 150);
+    expect(c.ratio("m")).toBe(1.5); // first sample is taken as is
+    c.observe("m", 100, 100);
+    expect(c.ratio("m")).toBeCloseTo(1.4); // then a moving average
+    expect(c.ratio("other")).toBe(1);
+  });
+
+  it("ignores tiny prompts and clamps outliers", () => {
+    const c = new TokenCalibration();
+    c.observe("m", 10, 40); // fixed chat-template overhead dominates
+    expect(c.ratio("m")).toBe(1);
+    c.observe("m", 100, 10_000);
+    expect(c.ratio("m")).toBe(3);
+  });
+
+  it("is fed by the gateway from reported usage", async () => {
+    const provider = new ScriptedProvider([ok]);
+    const gateway = new ModelGateway(provider, limiter());
+    const long = { ...request, messages: [{ role: "user" as const, content: "x".repeat(400) }] }; // estimate: 54 tokens
+    await gateway.complete(long);
+    expect(gateway.calibration.ratio("m")).toBe(0.5); // ok() reports 3 input tokens, clamped at 0.5
   });
 });

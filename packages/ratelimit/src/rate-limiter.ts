@@ -13,7 +13,16 @@ export interface AcquireOptions {
   onWait?: (info: { waitMs: number; reason: DenyReason }) => void;
   /** Correlation id for events (a comparison id). */
   tag?: string;
+  /**
+   * The longest the caller can hold the lease (its call timeout). The lease's
+   * TTL is stretched to outlive it, so a slow but healthy call never loses its
+   * in-flight slot while still running; only a crashed caller's lease expires.
+   */
+  holdMs?: number;
 }
+
+/** How long a lease outlives its holder's timeout, to cover releasing it. */
+export const LEASE_TTL_MARGIN_MS = 30_000;
 
 /**
  * The thing callers use. Wraps a LeaseStore with:
@@ -49,10 +58,14 @@ export class RateLimiter {
     }
 
     const bucket = this.bucketFor(model);
+    const limits =
+      opts.holdMs !== undefined && opts.holdMs + LEASE_TTL_MARGIN_MS > this.limits.leaseTtlMs
+        ? { ...this.limits, leaseTtlMs: opts.holdMs + LEASE_TTL_MARGIN_MS }
+        : this.limits;
     const startedAt = Date.now();
     const deadline = startedAt + opts.maxWaitMs;
     for (let attempt = 1; ; attempt++) {
-      const result = await this.store.tryAcquire(bucket, estimatedTokens, this.limits);
+      const result = await this.store.tryAcquire(bucket, estimatedTokens, limits);
       if (result.granted) {
         this.events.emit({
           ...base,
