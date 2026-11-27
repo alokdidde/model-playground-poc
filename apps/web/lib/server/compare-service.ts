@@ -75,7 +75,6 @@ export async function createComparison(input: CompareRequest, requestId: string,
       models: input.models,
       maxTokens: input.maxTokens,
       temperature: input.temperature,
-      taskType: input.taskType,
       priority: input.priority,
       idempotencyKey,
       requestId,
@@ -109,7 +108,6 @@ export interface ComparisonSummary {
   id: string;
   prompt: string;
   models: string[];
-  taskType: string;
   status: string;
   createdAt: Date;
   winnerModel: string | null;
@@ -126,7 +124,6 @@ export async function listComparisons(limit: number, before?: string): Promise<{
       id: true,
       prompt: true,
       models: true,
-      taskType: true,
       status: true,
       createdAt: true,
       judgement: { select: { winnerModel: true } },
@@ -301,7 +298,7 @@ async function runJudgeStep(
   try {
     const verdict = await runJudge(
       gateway,
-      { prompt: input.prompt, taskType: input.taskType, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
+      { prompt: input.prompt, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
       { signal, tag: comparisonId, ...CALL_OPTIONS },
     );
     await prisma.judgement.create({

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LIMITS, TASK_TYPE_IDS } from "./constants";
+import { LIMITS } from "./constants";
 
 /**
  * Request and response contracts for the HTTP API. The server validates with
@@ -25,7 +25,6 @@ export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
  * provider's default (topP, reasoningEffort). Whether a model accepts a given
  * setting is checked on the server against the model catalog.
  */
-export const TaskTypeSchema = z.enum(TASK_TYPE_IDS);
 
 /** How the user trades quality against cost and speed. Any non-negative weights; normalised on use. */
 export const PriorityWeightsSchema = z
@@ -65,8 +64,6 @@ export const CompareRequestSchema = z
         model: modelId.optional(),
       })
       .default({ enabled: true }),
-    /** Tunes the judge's rubric and is stored with the comparison. */
-    taskType: TaskTypeSchema.default("general"),
     /** The user's stated priority, stored with the comparison (the recommendation itself is computed client-side). */
     priority: PriorityWeightsSchema.optional(),
     /** Also ask a neutral model to merge the answers into one, with attribution. */

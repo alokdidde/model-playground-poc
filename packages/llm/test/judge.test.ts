@@ -52,12 +52,13 @@ describe("runJudge (mock provider)", () => {
   });
 });
 
-describe("buildJudgePrompt task focus", () => {
-  it("adds the task-specific focus only for non-general tasks", async () => {
-    const { buildJudgePrompt } = await import("../src/judge");
-    const labelled = [{ label: "A", output: "42" }];
-    expect(buildJudgePrompt("q", labelled)).not.toContain("Task type");
-    expect(buildJudgePrompt("q", labelled, "reasoning")).toMatch(/^## Task type: Reasoning & math\n.*final answer/);
+describe("judge rubric", () => {
+  it("asks the judge to hold answers to the format the prompt asks for", async () => {
+    // Replaced the per-task focus (e.g. "Extraction / JSON"): in a live test the plain rubric with this
+    // rule picked the same winner on an extraction prompt, and a wrongly chosen task type can't skew it.
+    const { JUDGE_SYSTEM_PROMPT, buildJudgePrompt } = await import("../src/judge");
+    expect(JUDGE_SYSTEM_PROMPT).toMatch(/specific format .* weigh following it exactly/);
+    expect(buildJudgePrompt("q", [{ label: "A", output: "42" }])).toMatch(/^## User prompt/);
   });
 });
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, History, Link2, Loader2, Pencil, Square } from "lucide-react";
-import { TASK_TYPE_IDS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type Problem, type TaskType } from "@fomo/shared";
+import type { ModelInfo, ModelSettings, PriorityWeights, Problem } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +19,7 @@ import { fetchJson, ProblemError } from "@/lib/api-client";
 import { restoreCompareState, type SavedComparison } from "@/lib/compare-state";
 import { getLiveRun, subscribeLiveRuns } from "@/lib/live-run";
 import { winsByModel, type MetricKey } from "@/lib/metrics";
-import { PRIORITY_WEIGHTS, TASK_DEFAULT_PRIORITY } from "@/lib/recommend";
+import { PRIORITY_WEIGHTS } from "@/lib/recommend";
 import { parseSortParams, sortModels, sortParam, type SortKey } from "@/lib/run-sort";
 import { timeAgo } from "@/lib/utils";
 
@@ -27,13 +27,10 @@ import { timeAgo } from "@/lib/utils";
 interface RunInfo {
   prompt: string;
   systemPrompt: string | null;
-  taskType: TaskType;
   priority: PriorityWeights | null;
   modelSettings: Record<string, ModelSettings>;
   createdAt: string | null;
 }
-
-const asTask = (t: string | undefined): TaskType => ((TASK_TYPE_IDS as readonly string[]).includes(t ?? "") ? (t as TaskType) : "general");
 
 /**
  * One compare run: streams live when it was just started in this tab,
@@ -76,7 +73,6 @@ export function RunView({ id }: { id: string }) {
     ? {
         prompt: live.request.prompt,
         systemPrompt: live.request.systemPrompt ?? null,
-        taskType: asTask(live.request.taskType),
         priority: live.request.priority ?? null,
         modelSettings: (live.request.modelSettings ?? {}) as Record<string, ModelSettings>,
         createdAt: null,
@@ -84,7 +80,6 @@ export function RunView({ id }: { id: string }) {
     : saved && {
         prompt: saved.prompt,
         systemPrompt: saved.systemPrompt,
-        taskType: asTask(saved.taskType),
         priority: saved.priority,
         modelSettings: Object.fromEntries(saved.results.map((r) => [r.model, (r.settings ?? {}) as ModelSettings])),
         createdAt: saved.createdAt,
@@ -148,7 +143,7 @@ export function RunView({ id }: { id: string }) {
 
   const running = state.status === "running" || state.status === "RUNNING" || state.status === "QUEUED";
   const finished = !running;
-  const priority = priorityOverride ?? info.priority ?? PRIORITY_WEIGHTS[TASK_DEFAULT_PRIORITY[info.taskType]];
+  const priority = priorityOverride ?? info.priority ?? PRIORITY_WEIGHTS.balanced;
   const scores = new Map(state.judge.verdict?.scores.map((s) => [s.model, s]));
   // One fixed color per model for this run, shared by every chart and card.
   const colorOf = (m: string) => `var(--series-${(state.order.indexOf(m) % 6) + 1})`;
@@ -193,7 +188,6 @@ export function RunView({ id }: { id: string }) {
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           <span className="text-foreground font-medium">Compare run</span>
           {info.createdAt && <span>· {timeAgo(info.createdAt)}</span>}
-          <span>· {TASK_TYPES[info.taskType].label}</span>
           <span>· {state.order.length} models</span>
           <StatusBadge status={state.status} />
         </div>
@@ -244,7 +238,6 @@ export function RunView({ id }: { id: string }) {
           onPriorityChange={setPriorityOverride}
           customPriority={customPriority}
           onCustomPriorityChange={setCustomPriority}
-          taskLabel={TASK_TYPES[info.taskType].label}
         />
       )}
 

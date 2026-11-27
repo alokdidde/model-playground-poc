@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, FolderOpen, Play, Square, Target } from "lucide-react";
-import { LIMITS, TASK_TYPES, type PriorityWeights, type TaskType } from "@fomo/shared";
+import { ChevronDown, ChevronRight, FileText, FolderOpen, Play, Square } from "lucide-react";
+import { LIMITS, type PriorityWeights } from "@fomo/shared";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -10,8 +10,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PriorityPicker } from "./priority-picker";
@@ -19,16 +17,16 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 /** Starter prompts that show off different strengths (reasoning, writing, code, facts). */
-const PROMPT_LIBRARY: { title: string; prompt: string; task: TaskType }[] = [
-  { title: "Process vs thread", task: "general", prompt: "Explain the difference between a process and a thread, with one example each." },
-  { title: "Queue or HTTP call?", task: "general", prompt: "In three sentences, explain when to use a queue instead of a direct HTTP call between two services." },
-  { title: "Logic puzzle", task: "reasoning", prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning briefly." },
-  { title: "SQL", task: "coding", prompt: "Write a Postgres query that returns each customer's most recent order, given customers(id, name) and orders(id, customer_id, created_at, total)." },
-  { title: "Product copy", task: "writing", prompt: "Write a two-sentence product description for a reusable water bottle aimed at trail runners." },
-  { title: "Summarise", task: "summarization", prompt: "Summarise the CAP theorem for a junior engineer in under 80 words." },
+const PROMPT_LIBRARY: { title: string; prompt: string }[] = [
+  { title: "Process vs thread", prompt: "Explain the difference between a process and a thread, with one example each." },
+  { title: "Queue or HTTP call?", prompt: "In three sentences, explain when to use a queue instead of a direct HTTP call between two services." },
+  { title: "Logic puzzle", prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning briefly." },
+  { title: "SQL", prompt: "Write a Postgres query that returns each customer's most recent order, given customers(id, name) and orders(id, customer_id, created_at, total)." },
+  { title: "Product copy", prompt: "Write a two-sentence product description for a reusable water bottle aimed at trail runners." },
+  { title: "Summarise", prompt: "Summarise the CAP theorem for a junior engineer in under 80 words." },
   {
     title: "Extract JSON",
-    task: "extraction",
+   
     prompt:
       'Extract {"name", "company", "email", "meeting_date"} as JSON from: "Hi, this is Priya Nair from Acme Robotics (priya@acme.io). Can we meet on 4 Dec?" Reply with JSON only.',
   },
@@ -43,8 +41,6 @@ export function PromptCard({
   onJudgeChange,
   synthesize,
   onSynthesizeChange,
-  taskType,
-  onTaskTypeChange,
   priority,
   onPriorityChange,
   customPriority,
@@ -63,8 +59,6 @@ export function PromptCard({
   onJudgeChange: (v: boolean) => void;
   synthesize: boolean;
   onSynthesizeChange: (v: boolean) => void;
-  taskType: TaskType;
-  onTaskTypeChange: (t: TaskType) => void;
   priority: PriorityWeights;
   onPriorityChange: (w: PriorityWeights) => void;
   customPriority: boolean;
@@ -95,7 +89,6 @@ export function PromptCard({
                 key={p.title}
                 onSelect={() => {
                   onPromptChange(p.prompt);
-                  onTaskTypeChange(p.task);
                 }}
                 className="flex-col items-start gap-0.5"
               >
@@ -119,27 +112,6 @@ export function PromptCard({
           }}
         />
         <div className="bg-muted/50 flex flex-wrap items-start gap-x-6 gap-y-3 rounded-lg p-3">
-          <div className="space-y-1.5">
-            <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-              <Target className="size-3.5" /> Task type
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="bg-background" title="Tunes the judge to what good looks like for this kind of task">
-                  {TASK_TYPES[taskType].label} <ChevronDown />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuRadioGroup value={taskType} onValueChange={(v) => onTaskTypeChange(v as TaskType)}>
-                  {(Object.keys(TASK_TYPES) as TaskType[]).map((t) => (
-                    <DropdownMenuRadioItem key={t} value={t}>
-                      {TASK_TYPES[t].label}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
           <div className="space-y-1.5">
             <div className="text-muted-foreground text-xs font-medium">What matters most</div>
             <PriorityPicker value={priority} onChange={onPriorityChange} custom={customPriority} onCustomChange={onCustomPriorityChange} size="sm" />

@@ -16,7 +16,6 @@ export function RecommendationCard({
   onPriorityChange,
   customPriority,
   onCustomPriorityChange,
-  taskLabel,
 }: {
   verdict: JudgeVerdict;
   metrics: Record<string, CallMetrics | undefined>;
@@ -25,7 +24,6 @@ export function RecommendationCard({
   onPriorityChange: (w: PriorityWeights) => void;
   customPriority: boolean;
   onCustomPriorityChange: (v: boolean) => void;
-  taskLabel: string;
 }) {
   const candidates = verdict.scores.flatMap((score) => {
     const m = metrics[score.model];
@@ -51,7 +49,7 @@ export function RecommendationCard({
           {describeRecommendation(rec, label)}
         </p>
         <p className="text-muted-foreground mt-1 text-xs">
-          Task: {taskLabel} · Judge score {pick.score.overall}/10 · {formatUsd(pick.metrics.costUsd)} · {formatMs(pick.metrics.latencyMs)}. Based on this one prompt, so
+          Judge score {pick.score.overall}/10 · {formatUsd(pick.metrics.costUsd)} · {formatMs(pick.metrics.latencyMs)}. Based on this one prompt, so
           check it on your own prompts before switching models in production.
         </p>
       </div>

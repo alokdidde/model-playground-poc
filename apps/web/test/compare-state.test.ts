@@ -69,7 +69,6 @@ describe("restoreCompareState", () => {
     prompt: "hi",
     systemPrompt: null,
     models: ["a", "b", "c"],
-    taskType: "general",
     priority: null,
     status: "PARTIAL",
     createdAt: "2026-11-27T00:00:00Z",
