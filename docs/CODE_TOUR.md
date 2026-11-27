@@ -27,7 +27,7 @@ zod schemas for every request body, the SSE event types, and the RFC 9457 proble
 
 ## 4. The browser side of the stream: `apps/web/lib/api-client.ts`, `live-run.ts`, `compare-state.ts`
 
-`streamCompare()` POSTs and parses SSE from `fetch` (`EventSource` can't POST a body). `live-run.ts` keeps the stream outside React, so moving from `/compare` to `/runs/:id` doesn't cut it off. `compare-state.ts` is a pure reducer from events to UI state (tested).
+`streamCompare()` POSTs and parses SSE from `fetch` (`EventSource` can't POST a body). `live-run.ts` keeps the stream outside React, so moving from the Compare page (`/`) to `/runs/:id` doesn't cut it off. `compare-state.ts` is a pure reducer from events to UI state (tested).
 
 - **Expect:** "Why not WebSockets?" The stream is one-way, SSE runs over plain HTTP through App Platform's load balancer, and cancel means closing the request.
 
