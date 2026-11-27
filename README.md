@@ -11,6 +11,7 @@ Send one prompt to several LLMs on **DigitalOcean serverless inference**, each w
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the deep dive (problem framing, the compare path, reliability, rate limiting, API, deploy).
 - [docs/CODE_TOUR.md](docs/CODE_TOUR.md): the files that matter, in reading order.
 - [docs/DEMO.md](docs/DEMO.md): a 5-minute demo script.
+- [docs/SECURITY.md](docs/SECURITY.md): the security pass: what was fixed and which risks are accepted for a PoC.
 
 ## What's in the box
 

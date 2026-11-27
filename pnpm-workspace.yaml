@@ -8,3 +8,9 @@ onlyBuiltDependencies:
   - prisma
   - esbuild
   - sharp
+
+# Security patches for transitive dependencies (pnpm audit). Both are
+# patch/minor bumps within the same major as the versions Next and Prisma pin.
+overrides:
+  postcss@<8.5.23: ^8.5.23
+  effect@<3.22.1: ^3.22.1
