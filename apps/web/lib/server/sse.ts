@@ -2,8 +2,8 @@ import { encodeSseEvent, SSE_HEARTBEAT } from "@fomo/shared";
 
 /**
  * Builds a text/event-stream Response. `run` receives an `emit` function and
- * an AbortSignal that fires when the client disconnects, so upstream model
- * calls can be cancelled instead of burning tokens nobody will read.
+ * an AbortSignal that fires when the client disconnects. After a disconnect,
+ * `emit` quietly does nothing; whether the work stops is up to `run`.
  */
 export function sseResponse<E extends { type: string }>(
   requestSignal: AbortSignal,
