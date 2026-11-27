@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/compare", label: "Compare" },
-  { href: "/leaderboard", label: "Leaderboard" },
 ];
 
 export function SiteNav() {

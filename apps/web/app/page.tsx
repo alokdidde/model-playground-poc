@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Columns3, Crown, History, Trophy } from "lucide-react";
+import { ArrowRight, Columns3, Crown, History } from "lucide-react";
 import { describeModel } from "@fomo/llm";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -73,12 +73,6 @@ export default async function HomePage() {
           </Card>
         )}
       </section>
-
-      <div className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 text-sm">
-        <Link href="/leaderboard" className="hover:text-foreground flex items-center gap-1.5">
-          <Trophy className="size-4" /> Leaderboard: every model&apos;s measured results
-        </Link>
-      </div>
     </div>
   );
 }

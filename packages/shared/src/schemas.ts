@@ -65,7 +65,7 @@ export const CompareRequestSchema = z
         model: modelId.optional(),
       })
       .default({ enabled: true }),
-    /** Tunes the judge's rubric and is stored for per-task leaderboards. */
+    /** Tunes the judge's rubric and is stored with the comparison. */
     taskType: TaskTypeSchema.default("general"),
     /** The user's stated priority, stored with the comparison (the recommendation itself is computed client-side). */
     priority: PriorityWeightsSchema.optional(),
@@ -110,10 +110,6 @@ export const IdParamsSchema = z.object({
 export const CompareListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   before: z.string().min(1).max(64).optional(),
-});
-
-export const LeaderboardQuerySchema = z.object({
-  taskType: TaskTypeSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ DO earns money when customers send inference traffic through DO and keep it ther
 
 - Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
 - Combined view: LLM-as-judge scores (shuffled, anonymised, neutral judge), a synthesized answer with per-model citations, and a cost/quality/speed recommendation; thumbs up/down and votes.
-- A leaderboard from every compare.
+- Built and cut: a leaderboard across every compare. Cut because prompts with different expectations don't average into a fair ranking; the per-run combined view is the comparison.
 - Built and cut: Help me choose, a plain-language advisor. Cut because the brief doesn't ask for an assistant; it returns below as the first step of the agentic assistant.
 - Shared, lease-based rate limiting so the whole system stays inside the account's limits, with every limiter and retry decision recorded and drawn as a timeline (`/ops/rate-limits`).
 - Built and cut: durable batch evals (DBOS worker). Cut to keep the PoC small enough to defend line by line; the design notes carry into phase 2.
@@ -51,6 +51,7 @@ Goal: replace "vibes" with evidence on the customer's workload. *Size: a small t
 - **Custom rubrics and graders**: per-dataset judge prompts, plus deterministic checks (JSON schema valid, regex, contains/doesn't contain, code compiles, exact match) mixed with LLM judges.
 - **Judge/human agreement from votes**: report how often the judge's winner matches the human "best answer" vote and thumbs, per task type, using the votes we already collect. Where agreement is low, re-weight or replace the judge for that task.
 - **A panel of judges**: for high-stakes runs, several smaller judges from different model families vote instead of one large judge. This cuts both one model's bias and cost (Verga et al. 2024, *Replacing Judges with Juries*). It builds on the two-order judging we already do.
+- **Potential: per-dataset or per-category leaderboards**: rank models only across prompts that share expectations (one batch-eval dataset, or one task category with a fixed rubric), with confidence intervals so overlapping models aren't shown as different. This is the honest version of the cross-run leaderboard that was cut from the PoC.
 - **Cost/quality/latency frontier**: a Pareto chart per dataset ("Model B is 95% as good as Model A at 20% of the price").
 - **Regression testing for prompts and models ("CI for prompts")**: re-run a dataset on a schedule or on every prompt change, and alert when quality drops. This matters on DO specifically because only the two most recent versions of each model stay available, so model upgrades are forced.
 
@@ -65,7 +66,7 @@ Goal: the customer stops picking models by hand. *Size: the phase 2 team plus an
 - **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
 - **Council / ensemble mode**: the PoC's synthesizer, promoted to an API: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
 
-- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. The first step is a non-agentic "Help me choose" (built once, then cut from the PoC): an LLM turns plain words into a task type, quality/cost/speed weights and sample prompts, our code ranks models from measured leaderboard data, and the LLM explains that ranking using only those numbers, then opens Compare prefilled. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
+- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. The first step is a non-agentic "Help me choose" (built once, then cut from the PoC): an LLM turns plain words into a task type, quality/cost/speed weights and sample prompts, our code ranks models from measured eval data, and the LLM explains that ranking using only those numbers, then opens Compare prefilled. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
 
 ## Phase 4: Make a better model (longer term)
 
@@ -87,7 +88,7 @@ Goal: close the loop from preferences to a model tuned for the customer. *Size: 
 ## Technical evolution that supports this
 
 - **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (one more `LeaseStore` implementation behind the existing contract tests).
-- **Leaderboard → materialised views** refreshed on a schedule; eventually a column store for analytics on millions of results.
+- **Eval reports → materialised views** refreshed on a schedule; eventually a column store for analytics on millions of results.
 - **API → standalone gateway service** (the `llm` + `ratelimit` packages lift out unchanged) when the routing endpoint ships; at that point a Rust or Go proxy may be worth it for per-request overhead.
 - **App Platform → DOKS** when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
 - **Batch work → DBOS, then Temporal** only if orchestration outgrows a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.

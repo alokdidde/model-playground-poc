@@ -28,7 +28,7 @@
 1. **Interactive compare.** One prompt, any number of the available models (no cap), each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
 2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
-4. **Leaderboard.** Every comparison feeds a leaderboard that can be cut by task type.
+4. **Run history.** Every comparison is saved and has its own page with the answers, the judge and the metrics.
 
 One prompt is still an anecdote. Running a model set over the user's own prompt set (batch evals) is the obvious next step. It was built and then deliberately cut to keep the PoC small enough to defend line by line; see [DECISIONS.md](DECISIONS.md) and the [roadmap](ROADMAP.md).
 
@@ -152,8 +152,6 @@ Every call (compare, synthesis, judge) goes through the gateway, which records:
 | Effective price per 1M | This call's cost / all its tokens | Shows the real blended rate, e.g. a reasoning model's "cheap" list price after thinking tokens |
 
 Speed is measured from the first chunk rather than from the request, so it is a property of the model's decoding, not of queueing or network setup; TTFT covers that part. A stream that breaks after text was shown is never retried, because the user is already reading it.
-
-The leaderboard takes `?task=<type>` (UI pills, and `taskType` on `GET /api/leaderboard`), because "best model" depends on the job.
 
 ### Per-model settings and capabilities
 
@@ -315,7 +313,7 @@ Postgres is already there for app data, and at tens of calls per second a 1-3 ms
 
 `Comparison` → `CompareResult` (one per model), `Judgement`, `Vote`. `rate_lease` and `rate_cooldown` back the Postgres lease store; `rate_event` records its decisions (see section 4).
 
-Metrics are stored per call so the leaderboard can compute averages, win rates and error rates. It aggregates on read, which is fine at PoC scale; at scale it becomes a materialised view refreshed on a schedule.
+Metrics are stored per call, so a future per-dataset report (batch evals) can compute averages, win rates and error rates from them. There is no cross-run leaderboard: scores from unrelated prompts don't average into anything meaningful (see DECISIONS.md).
 
 ## 7. Deployment on App Platform
 
@@ -361,6 +359,5 @@ App Platform is the right call for the PoC and for a first production version. M
 - `stream_options.include_usage` is requested for streaming usage; DO's docs don't say whether it's honoured. If it isn't, tokens are estimated and flagged. Set `GRADIENT_STREAM_USAGE=0` if the endpoint rejects it.
 - No auth, per-user quotas or inbound rate limiting yet (the middleware hook is where they go).
 - Prices are a static table from DO's pricing page (2026-11-26) using the base tier; long-context tiers aren't modelled.
-- The leaderboard mixes judge scores from different prompts and judges; it's indicative, not a benchmark.
 - Model capabilities and plan availability are a static table from one probe (2026-11-26). A periodic re-probe (or reading DO's model metadata, if it exposes this) would keep it current.
 - Tool calling is shown in the UI as "coming later" and is not implemented.
