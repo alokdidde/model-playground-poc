@@ -18,19 +18,19 @@ export function SiteNav() {
   return (
     <header className="bg-background border-b">
       <nav className="mx-auto flex max-w-[1600px] items-center gap-2 px-4 py-2.5 sm:gap-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
+        <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
           <span className="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md">
             <Layers className="size-4" />
           </span>
           <span className="hidden sm:inline">Model FOMO</span>
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="-mr-4 flex min-w-0 items-center gap-1 overflow-x-auto pr-4 sm:mr-0 sm:pr-0 [scrollbar-width:none]">
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                "shrink-0 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap transition-colors sm:px-3",
                 isActive(item.href) ? "bg-accent-soft text-accent-soft-foreground font-medium" : "text-muted-foreground hover:text-foreground",
               )}
             >

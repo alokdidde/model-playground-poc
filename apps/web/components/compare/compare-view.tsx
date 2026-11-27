@@ -136,6 +136,8 @@ export function CompareView() {
   }
 
   const scores = new Map(state.judge.verdict?.scores.map((s) => [s.model, s]));
+  // One fixed color per model for this run, shared by every chart.
+  const colorOf = (id: string) => `var(--series-${(state.order.indexOf(id) % 6) + 1})`;
   const editing = selected.find((m) => m.id === settingsFor) ?? null;
   const metrics = Object.fromEntries(state.order.map((id) => [id, state.panels[id]?.metrics]));
   const costs = Object.values(metrics).map((m) => m?.costUsd);
@@ -184,6 +186,8 @@ export function CompareView() {
             onRun={run}
             onStop={() => abortRef.current?.abort()}
           />
+          {!running && !prompt.trim() && <p className="text-muted-foreground text-sm">Type a prompt to compare.</p>}
+          {!running && prompt.trim() && selected.length === 0 && <p className="text-muted-foreground text-sm">Pick at least one model below.</p>}
           {state.error && (
             <p className="text-destructive text-sm">
               {state.error.title}
@@ -215,6 +219,8 @@ export function CompareView() {
             rows={state.order.flatMap((model) => (metrics[model] ? [{ model, metrics: metrics[model]! }] : []))}
             catalog={catalog}
             label={label}
+            colorOf={colorOf}
+            scores={scores}
           />
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <SynthesisCard synthesis={state.synthesis} label={label} />

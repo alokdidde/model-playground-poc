@@ -54,17 +54,20 @@ export function EvalRuns() {
     return () => clearInterval(timer);
   }, [refresh]);
 
+  const promptList = prompts
+    .split("\n")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  // Same rules as the API: a name, at least one prompt and one model.
+  const missing = !name.trim() ? "Add a run name." : promptList.length === 0 ? "Add at least one prompt." : selected.length === 0 ? "Pick at least one model." : null;
+
   async function submit() {
     setSubmitting(true);
     setError(undefined);
     const body: CreateEvalRunInput = {
       name,
       models: selected,
-      prompts: prompts
-        .split("\n")
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .map((prompt) => ({ prompt })),
+      prompts: promptList.map((prompt) => ({ prompt })),
     };
     try {
       await fetchJson("/api/evals", { method: "POST", body: JSON.stringify(body), idempotencyKey });
@@ -93,8 +96,8 @@ export function EvalRuns() {
           <Textarea value={prompts} onChange={(e) => setPrompts(e.target.value)} rows={5} placeholder="One prompt per line" />
           <ModelPicker models={models} selected={selected} onChange={setSelected} max={LIMITS.maxModelsPerCompare} />
           <div className="flex items-center gap-3">
-            {error && <p className="text-destructive text-sm">{error}</p>}
-            <Button className="ml-auto" disabled={submitting || selected.length === 0} onClick={submit}>
+            {error ? <p className="text-destructive text-sm">{error}</p> : missing && <p className="text-muted-foreground text-sm">{missing}</p>}
+            <Button className="ml-auto" disabled={submitting || missing !== null} onClick={submit}>
               Start eval run
             </Button>
           </div>

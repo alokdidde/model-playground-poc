@@ -36,3 +36,31 @@ export function bestBy(rows: { model: string; metrics: CallMetrics }[], key: Met
   }
   return best?.model;
 }
+
+export interface RankedValue {
+  model: string;
+  value: number | null;
+  /** Bar length, 0..1, relative to the largest value on this metric. */
+  share: number;
+  /** How far from the best: "1.8× slower" / "2.0× the cost". Null for the best and for unknowns. */
+  timesBest: number | null;
+  isBest: boolean;
+}
+
+/**
+ * One metric across models, best first, ready to draw as bars.
+ * Unknown values go last. A tie for best marks every tied model.
+ */
+export function rankByMetric(values: { model: string; value: number | null | undefined }[], higherIsBetter: boolean): RankedValue[] {
+  const known = values.filter((v): v is { model: string; value: number } => typeof v.value === "number");
+  const sorted = [...known].sort((a, b) => (higherIsBetter ? b.value - a.value : a.value - b.value));
+  const max = Math.max(0, ...known.map((v) => v.value));
+  const best = sorted[0]?.value;
+  const ranked = sorted.map(({ model, value }): RankedValue => {
+    const isBest = value === best;
+    const ratio = higherIsBetter ? (value > 0 ? best! / value : null) : best! > 0 ? value / best! : null;
+    return { model, value, share: max > 0 ? value / max : 0, timesBest: isBest || ratio === null ? null : ratio, isBest };
+  });
+  const unknown = values.filter((v) => typeof v.value !== "number").map(({ model }) => ({ model, value: null, share: 0, timesBest: null, isBest: false }));
+  return [...ranked, ...unknown];
+}

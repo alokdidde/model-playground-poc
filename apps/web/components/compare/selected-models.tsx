@@ -70,7 +70,35 @@ export function SelectedModels({
       {selected.length === 0 ? (
         <p className="text-muted-foreground px-4 py-6 text-center text-sm">Add models from the catalog to compare them.</p>
       ) : (
-        <div className="relative overflow-x-auto px-2">
+        <>
+        <ul className="divide-y border-t sm:hidden">
+          {selected.map((m) => {
+            const info = catalog.get(m.id);
+            const caps = info?.capabilities ?? { temperature: true, topP: true, reasoning: true, tools: false };
+            const summary = [
+              caps.temperature && `temp ${m.settings.temperature}`,
+              caps.topP && `top P ${m.settings.topP}`,
+              `${m.settings.maxTokens} max tokens`,
+              caps.reasoning && `reasoning ${m.settings.reasoningEffort ?? "default"}`,
+            ].filter(Boolean);
+            return (
+              <li key={m.id} className={cn("flex items-center gap-2 px-4 py-2", activeId === m.id && "bg-accent-soft/60")}>
+                <ProviderAvatar provider={info?.provider ?? m.id} className="size-7 shrink-0 text-xs" />
+                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpenSettings(m.id)}>
+                  <div className="truncate text-sm font-medium">{info?.label ?? m.id}</div>
+                  <div className="text-muted-foreground truncate text-xs">{summary.join(" · ")}</div>
+                </button>
+                <Button variant="ghost" size="icon" aria-label={`Settings for ${info?.label ?? m.id}`} onClick={() => onOpenSettings(m.id)}>
+                  <Settings />
+                </Button>
+                <Button variant="ghost" size="icon" aria-label={`Remove ${info?.label ?? m.id}`} onClick={() => onChange(selected.filter((x) => x.id !== m.id))}>
+                  <X />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="relative hidden overflow-x-auto px-2 sm:block">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-muted-foreground text-left text-xs">
@@ -157,6 +185,7 @@ export function SelectedModels({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Card>
   );
