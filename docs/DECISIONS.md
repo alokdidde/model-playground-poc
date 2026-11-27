@@ -8,7 +8,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 
 1. **Show me.** Send one prompt to several DO models at once and watch them stream side by side, with cost, speed and tokens.
 2. **Combine it.** Get one view across the answers: a neutral judge scores them, a synthesizer merges them with citations, and a recommendation weighs quality against cost and speed ("X is 95% as good at 1/10th of the cost").
-3. **Learn from it.** Every compare feeds a leaderboard, and Help me choose turns a use case in plain words into a shortlist ranked from those measured runs. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
+3. **Learn from it.** Every compare feeds a leaderboard. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
 
 ## What I built
 
@@ -16,7 +16,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 | --- | --- |
 | Streaming side-by-side compare (SSE) | The core ask. Streaming keeps a 30-second reasoning model from feeling broken. |
 | LLM judge, synthesis, recommendation | The "combined view". The judge picks the best answer, the synthesis produces a better one, and the recommendation turns the scores into a decision. |
-| Leaderboard, Help me choose | Reading the evidence. Help me choose answers in plain words, but it ranks from measured data only: the model writes the text, our code makes the decision. |
+| Leaderboard | Reading the evidence across runs, cut by task type. |
 | One `ModelGateway` with retries and shared rate limiting | Every model call, from every web instance, shares the same retries, timeouts and budget, so the whole system stays inside DO's per-model limits. |
 | Rate-limit observability (`/ops/rate-limits`) | Every limiter and retry decision (waited for capacity, got a 429, cooled down, learned a limit, halved the factor, slept N ms before a retry) is one row in Postgres, drawn as a timeline per model and per compare. Without it, "how does it behave under load?" is a guess. |
 
@@ -62,7 +62,7 @@ An LLM judge has measured biases. Each guard below exists because a paper measur
 The brief asks for a multi-model compare with a combined view. Three parts go further, and each one is the smallest version that makes the core experience trustworthy:
 
 - **Rate-limit leasing, and its event log.** Many people comparing at once share one DO key, and DO limits each (key, model) to 120 requests a minute. Without a shared budget, every web instance would think it had the whole limit and users would collect 429s. Leasing in the Postgres we already run is the minimum that keeps instances inside one budget; retries alone only react after the limit is hit. The event log is what lets us show, not claim, how it behaves (stress test numbers in [ARCHITECTURE § 4](ARCHITECTURE.md#4-reliability-the-modelgateway)).
-- **Help me choose and the home page.** Not every customer knows which models to compare. Help me choose turns a plain-language need into a shortlist, ranked only from measured runs, and opens Compare prefilled with it. The home page simply offers the two ways in. It is a small step toward the agentic assistant on the roadmap, without the cost of an agent that spends tokens on its own.
+- **Help me choose: built, then cut.** A plain-language advisor (use case in, shortlist ranked from measured runs out) was built and removed on 2026-11-27. The brief asks for a side-by-side view and a combined result, not an AI assistant, and every extra LLM feature is more to defend. It is on the roadmap as the first step toward the agentic assistant.
 
 ## Related work
 

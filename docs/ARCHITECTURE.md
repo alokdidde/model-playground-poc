@@ -28,7 +28,7 @@
 1. **Interactive compare.** One prompt, any number of the available models (no cap), each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
 2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
-4. **Leaderboard and Help me choose.** Every comparison feeds a leaderboard that can be cut by task type, and Help me choose turns a use case in plain words into a ranked shortlist from that data.
+4. **Leaderboard.** Every comparison feeds a leaderboard that can be cut by task type.
 
 One prompt is still an anecdote. Running a model set over the user's own prompt set (batch evals) is the obvious next step. It was built and then deliberately cut to keep the PoC small enough to defend line by line; see [DECISIONS.md](DECISIONS.md) and the [roadmap](ROADMAP.md).
 
@@ -52,7 +52,7 @@ flowchart LR
   W -- "Prisma" --> P[(Managed Postgres)]
 ```
 
-One service and one database. Every model call (answers, judge, synthesis, Help me choose) goes through one choke point, `ModelGateway`, so retries, timeouts and the rate-limit budget behave the same everywhere.
+One service and one database. Every model call (answers, judge, synthesis) goes through one choke point, `ModelGateway`, so retries, timeouts and the rate-limit budget behave the same everywhere.
 
 ### Repository layout
 
@@ -70,7 +70,7 @@ Splitting `llm` and `ratelimit` out of the web app keeps them testable on their 
 
 ## 3. Interactive path: `POST /api/compare`
 
-Pages: `/` offers the two ways in and the latest runs; `/compare` is only the setup form; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/compare?from=:id` with the form filled in.
+Pages: `/` links to a new compare and lists the latest runs; `/compare` is only the setup form; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/compare?from=:id` with the form filled in.
 
 ```mermaid
 sequenceDiagram
@@ -152,17 +152,6 @@ Every call (compare, synthesis, judge) goes through the gateway, which records:
 | Effective price per 1M | This call's cost / all its tokens | Shows the real blended rate, e.g. a reasoning model's "cheap" list price after thinking tokens |
 
 Speed is measured from the first chunk rather than from the request, so it is a property of the model's decoding, not of queueing or network setup; TTFT covers that part. A stream that breaks after text was shown is never retried, because the user is already reading it.
-
-### Help me choose: a use case in plain words
-
-`/choose` takes a description like "a support chatbot, high volume, replies start in under 2 seconds" and answers "which model should I try?". The design rule: **the model reads and writes language; our code makes the decision.**
-
-1. **Parse (LLM).** The house model (the judge model, `openai-gpt-oss-120b`) turns the text into strict JSON: task type, quality/cost/speed weights (normalised to shares), hard limits only if stated (cost per call, time until the answer starts), three realistic sample prompts, and a one-line summary. zod validates it; one re-ask on bad JSON, as with the judge. The prompt forbids naming models.
-2. **Rank (code).** `rank()` in `apps/web/lib/advisor-rank.ts` reads the leaderboard filtered to that task type (falling back to all runs if fewer than two models have judged data, and saying so), scores each model with the same weighted sum as the compare recommendation (`rankCandidates`), and moves models that break a stated limit to the bottom, labelled. Models never judged are listed as "not ranked yet" rather than guessed.
-3. **Explain (LLM).** The same model gets the need, the weights and the ranking table (numbers only) and writes 3 to 5 sentences, told to use only those numbers. If this call fails, the ranking still shows.
-4. **Act.** "Compare the top 3" opens Compare prefilled (models, first sample prompt, task type, weights, via query string).
-
-Because the ranking comes from measured runs, the advisor can't hallucinate benchmarks or favour a model it "likes", and its answer gets better as more compares are run. The trade-off: with little data it can only rank what has been measured, which the page states.
 
 The leaderboard takes `?task=<type>` (UI pills, and `taskType` on `GET /api/leaderboard`), because "best model" depends on the job.
 

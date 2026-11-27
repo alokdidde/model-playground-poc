@@ -16,7 +16,7 @@ A security pass over the PoC (2026-11-27). The short version: there was no SQL i
 | Error leakage | API 500s were already generic. But model-call failures that were *our* bugs (e.g. a database error) streamed `error.message` to the browser and stored it with the result. | **Fixed**: generic detail to the client; the real error goes to the log with the run id |
 | Secrets | `DO_MODEL_ACCESS_KEY` and `DATABASE_URL` are App Platform SECRET env vars, `.env` is gitignored, and no key appears in the git history. Logs record request metadata, not prompts or keys. | No issue |
 | SSRF | The server only calls the inference URL from `GRADIENT_BASE_URL` (env, not user input). Model ids cannot change the host. No user-supplied URL is fetched server-side. | No issue |
-| Input limits | Body 1 MB (now counted in bytes), prompt 20k chars, system prompt 4k, `max_tokens` up to 4,096 (retried once at 4x for reasoning models, capped at 8,192), Help me choose 2k chars. | No issue |
+| Input limits | Body 1 MB (now counted in bytes), prompt 20k chars, system prompt 4k, `max_tokens` up to 4,096 (retried once at 4x for reasoning models, capped at 8,192). | No issue |
 | Dependencies (`pnpm audit`) | 6 advisories, all in build-time tooling (PostCSS inside Next's CSS build, `effect` and `deepmerge-ts` inside the Prisma CLI). None is reachable with user input at runtime. | **5 patched** with overrides in `pnpm-workspace.yaml`. `deepmerge-ts` needs a major bump inside Prisma's CLI, so it is left for the next Prisma upgrade. |
 
 ## Accepted risks (PoC scope)

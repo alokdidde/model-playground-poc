@@ -1,6 +1,6 @@
 # Model FOMO
 
-Send one prompt to several LLMs on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**: an independent judge scores the anonymised answers, a synthesizer merges them into one answer that cites each model, and a recommendation weighs quality against cost and latency ("X is 95% as good at 1/10th of the cost"). Every comparison feeds a **leaderboard**, and **Help me choose** turns a use case in plain words into a ranked shortlist. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline. Batch evals over many prompts are on the [roadmap](docs/ROADMAP.md).
+Send one prompt to several LLMs on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**: an independent judge scores the anonymised answers, a synthesizer merges them into one answer that cites each model, and a recommendation weighs quality against cost and latency ("X is 95% as good at 1/10th of the cost"). Every comparison feeds a **leaderboard**. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline. Batch evals over many prompts are on the [roadmap](docs/ROADMAP.md).
 
 **Live PoC:** https://model-fomo-qlrb3.ondigitalocean.app
 
@@ -17,7 +17,7 @@ Send one prompt to several LLMs on **DigitalOcean serverless inference**, each w
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | Next.js 15 (App Router) + shadcn/ui. UI and HTTP API (compare over SSE, Help me choose, leaderboard). |
+| `apps/web` | Next.js 15 (App Router) + shadcn/ui. UI and HTTP API (compare over SSE, run history, leaderboard). |
 | `packages/llm` | `ModelGateway` (retries, timeouts, rate limiting), DO Gradient provider, mock provider, LLM judge. |
 | `packages/ratelimit` | Token + request leasing, shared through Postgres (in-memory store for tests), plus the rate-event log. |
 | `packages/db` | Prisma schema and client. |
@@ -63,7 +63,6 @@ CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with a Postgres servi
 | `POST` | `/api/compare/:id/cancel` | Stop a running compare. Closing the tab does not stop it: it finishes and is saved. |
 | `PUT` | `/api/compare/:id/vote` | "Best answer" vote (idempotent). |
 | `PUT` | `/api/compare/:id/rating` | Thumbs up/down on one model's answer: `{model, rating: "up" \| "down" \| null}`. |
-| `POST` | `/api/advisor` | "Help me choose": `{ query }` in plain words; returns the parsed intent, a ranking from measured data, and a short explanation. |
 | `GET` | `/api/leaderboard` | Aggregated judge scores, win rates, human votes, latency, cost, errors. `?taskType=coding` filters by task type. |
 | `GET` | `/api/ops/rate-events` | Every rate-limit decision (`?minutes=30`, `?tag=<comparison id>`, `?model=`) plus a per-model summary. Drawn at `/ops/rate-limits`. |
 | `GET` | `/api/health` | Health check used by App Platform. |
