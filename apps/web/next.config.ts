@@ -44,6 +44,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Compare is the home page now; old links (including ?from= and ?history=1) keep working.
+  async redirects() {
+    return [{ source: "/compare", destination: "/", permanent: false }];
+  },
   // Our workspace packages ship TypeScript source; Next compiles them.
   transpilePackages: ["@fomo/shared", "@fomo/llm", "@fomo/ratelimit", "@fomo/db"],
   // Server-only packages with native or dynamic requires stay external.

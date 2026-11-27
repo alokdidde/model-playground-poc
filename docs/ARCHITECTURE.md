@@ -72,7 +72,7 @@ Splitting `llm` and `ratelimit` out of the web app keeps them testable on their 
 
 ## 3. Interactive path: `POST /api/compare`
 
-Pages: `/` links to a new compare and lists the latest runs; `/compare` is only the setup form; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/compare?from=:id` with the form filled in.
+Pages: `/` is the Compare setup form (with "Past runs" in a drawer); `/compare` redirects there for old links; `/runs/:id` shows one run. Pressing Compare opens the SSE stream from a small client-side store (`lib/live-run.ts`) and moves to the run page as soon as the server sends `comparison.started` with the saved id, so the stream survives the page change. The run page reads from that store while the run is live in this tab, and from `GET /api/compare/:id` otherwise (past runs, shared links, a refresh). "Edit and rerun" goes back to `/?from=:id` with the form filled in.
 
 ```mermaid
 sequenceDiagram
