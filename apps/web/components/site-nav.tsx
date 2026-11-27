@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/compare", label: "Compare" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/ops/rate-limits", label: "Rate limits" },
 ];
 
 export function SiteNav() {

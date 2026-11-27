@@ -220,9 +220,6 @@ export function RunView({ id }: { id: string }) {
           <Button variant="outline" size="sm" onClick={copyLink} title="Copy a link to this run to share it">
             {copied ? <Check /> : <Link2 />} {copied ? "Link copied" : "Copy link"}
           </Button>
-          <Link href={`/ops/rate-limits?tag=${encodeURIComponent(id)}`} className="text-muted-foreground hover:text-foreground text-sm underline">
-            Rate-limit timeline
-          </Link>
           {running && (
             <span className="text-muted-foreground flex items-center gap-2 text-sm">
               <Loader2 className="size-4 animate-spin" />

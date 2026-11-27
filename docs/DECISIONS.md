@@ -18,7 +18,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 | LLM judge, synthesis, recommendation | The "combined view". The judge picks the best answer, the synthesis produces a better one, and the recommendation turns the scores into a decision. |
 | Leaderboard | Reading the evidence across runs, cut by task type. |
 | One `ModelGateway` with retries and shared rate limiting | Every model call, from every web instance, shares the same retries, timeouts and budget, so the whole system stays inside DO's per-model limits. |
-| Rate-limit observability (`/ops/rate-limits`) | Every limiter and retry decision (waited for capacity, got a 429, cooled down, learned a limit, halved the factor, slept N ms before a retry) is one row in Postgres, drawn as a timeline per model and per compare. Without it, "how does it behave under load?" is a guess. |
+| Rate-limit observability (`/ops/rate-limits`) | Every limiter and retry decision (waited for capacity, got a 429, cooled down, learned a limit, halved the factor, slept N ms before a retry) is one row in Postgres, drawn as a timeline per model and per compare. Without it, "how does it behave under load?" is a guess. It is an engineer's ops view of the architecture, not a user feature, so it is not in the nav or on the run page; the docs link to it. |
 
 ## What I deliberately skipped
 
