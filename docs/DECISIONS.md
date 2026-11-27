@@ -8,7 +8,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 
 1. **Show me.** Send one prompt to several DO models at once and watch them stream side by side, with cost, speed and tokens.
 2. **Combine it.** Get one view across the answers: a neutral judge scores them, a synthesizer merges them with citations, and a recommendation weighs quality against cost and speed ("X is 95% as good at 1/10th of the cost").
-3. **Learn from it.** Every compare feeds a leaderboard. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
+3. **Learn from it.** Every compare is saved with its answers, scores and metrics, and has its own page. Running the same models over many prompts at once (batch evals) is the next step on the roadmap.
 
 ## What I built
 
@@ -16,7 +16,7 @@ Customers with Model FOMO ask: *"did I pick the right model for my prompts?"* On
 | --- | --- |
 | Streaming side-by-side compare (SSE) | The core ask. Streaming keeps a 30-second reasoning model from feeling broken. |
 | LLM judge, synthesis, recommendation | The "combined view". The judge picks the best answer, the synthesis produces a better one, and the recommendation turns the scores into a decision. |
-| Leaderboard | Reading the evidence across runs, cut by task type. |
+| Run history | Every compare keeps its own page, so a result can be shared and re-read. |
 | One `ModelGateway` with retries and shared rate limiting | Every model call, from every web instance, shares the same retries, timeouts and budget, so the whole system stays inside DO's per-model limits. |
 | Rate-limit observability (`/ops/rate-limits`) | Every limiter and retry decision (waited for capacity, got a 429, cooled down, learned a limit, halved the factor, slept N ms before a retry) is one row in Postgres, drawn as a timeline per model and per compare. Without it, "how does it behave under load?" is a guess. It is an engineer's ops view of the architecture, not a user feature, so it is not in the nav or on the run page; the docs link to it. |
 
@@ -55,21 +55,20 @@ An LLM judge has measured biases. Each guard below exists because a paper measur
 
 **Cost.** Judging twice doubles the judge's cost. On the live app one judge call costs about $0.0005 with `gpt-oss-120b`, so a compare's judge goes from about $0.0005 to $0.001. That is similar to the cost of the answers themselves, and well under a cent. The two calls run in parallel, so it adds almost no wait. We did not add a second judge model: that would cost the same again and has a weaker case at PoC scale (see the panel of judges on the roadmap).
 
-**Leaderboard honesty.** Mean scores show a 95% confidence interval (± 1.96 × standard deviation / √n) and how many runs each model took part in, so two models whose ranges overlap aren't presented as different.
-
 ## Why the parts beyond the brief exist
 
 The brief asks for a multi-model compare with a combined view. Three parts go further, and each one is the smallest version that makes the core experience trustworthy:
 
 - **Rate-limit leasing, and its event log.** Many people comparing at once share one DO key, and DO limits each (key, model) to 120 requests a minute. Without a shared budget, every web instance would think it had the whole limit and users would collect 429s. Leasing in the Postgres we already run is the minimum that keeps instances inside one budget; retries alone only react after the limit is hit. The event log is what lets us show, not claim, how it behaves (stress test numbers in [ARCHITECTURE § 4](ARCHITECTURE.md#4-reliability-the-modelgateway)).
 - **Help me choose: built, then cut.** A plain-language advisor (use case in, shortlist ranked from measured runs out) was built and removed on 2026-11-27. The brief asks for a side-by-side view and a combined result, not an AI assistant, and every extra LLM feature is more to defend. It is on the roadmap as the first step toward the agentic assistant.
+- **Leaderboard: built, then cut.** A page averaged judge scores, win rates, speed and cost across every compare (with 95% confidence intervals and a task-type filter), and was removed on 2026-11-27. Different prompts carry different expectations: a 7/10 on a hard coding prompt and a 7/10 on a one-line definition don't mean the same thing, and judge scores aren't calibrated across prompts. So an average across unrelated runs looks like evidence but isn't. The comparison that holds is within one run, where every model answered the same prompt, and that is the combined view on each run page. A leaderboard over a fixed prompt set that shares expectations (a batch eval on one dataset, or one task category) is on the roadmap.
 
 ## Related work
 
 How this PoC relates to existing work, and what it borrows:
 
 - **MT-Bench and Chatbot Arena** [1], **Chatbot Arena** [5]: LLM-as-judge and pairwise human preference at scale. We borrow the judge bias mitigations, and our human votes are a small, per-customer version of Arena.
-- **HELM** [6]: holistic evaluation across many metrics (accuracy, cost, latency, robustness). Our leaderboard reports quality next to cost, latency and errors for the same reason: "best" depends on what you're paying for.
+- **HELM** [6]: holistic evaluation across many metrics (accuracy, cost, latency, robustness). Our run page reports quality next to cost, latency and errors for the same reason: "best" depends on what you're paying for.
 - **FrugalGPT** [7] and **RouteLLM** [8]: send each query to the cheapest model that is good enough. That is the "choose for me" phase on our roadmap. Our compares collect the training data a learned router needs.
 - **LLM-Blender** [9]: rank several models' outputs, then fuse the best ones. Our judge plus synthesizer is the same idea, using one LLM for each step instead of trained rankers.
 
@@ -89,7 +88,6 @@ References:
 ## Honest limits
 
 - **The judge is one model, and judge/human agreement is not measured yet.** The live data has no human votes yet. The vote and rating endpoints exist. The next step is to report the share of compares where the judge's winner matches the human vote (roadmap).
-- **The confidence intervals are a normal approximation.** Judge scores are bounded integers, so the intervals are a guide, not a statistical test.
 - **This account can't call Anthropic or proprietary OpenAI models (403).** So the demo can't show "open model vs frontier model", which is the most common FOMO question.
 - **Costs use a static price table**, and tokens from failed attempts are not counted.
 - **A compare reopened mid-run shows answers as they are saved**, not token by token; only the tab that started it streams live.
