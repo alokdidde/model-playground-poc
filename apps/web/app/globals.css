@@ -107,4 +107,21 @@
   body {
     @apply bg-page text-foreground;
   }
+  /* Press feedback for every button in the app, including the small segmented ones. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  button:not(:disabled):active {
+    transform: scale(0.97);
+  }
+  button:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button:not(:disabled):active {
+      transform: none;
+    }
+  }
 }

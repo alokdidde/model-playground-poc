@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Check, Coins, Copy, Crown, Loader2, ThumbsDown, ThumbsUp, Timer, Trophy, Zap } from "lucide-react";
+import { AlertTriangle, Check, CircleDollarSign, Copy, Crown, Loader2, ThumbsDown, ThumbsUp, Timer, Trophy, Zap } from "lucide-react";
 import type { JudgeScore } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,7 +114,7 @@ export function AnswerColumn({
           <dl className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums">
             <Stat icon={Timer} label="Done in" short="done" value={formatMs(m.latencyMs)} best={wins.has("latencyMs")} />
             <Stat icon={Zap} label="First word" short="first word" value={formatMs(m.ttftMs)} best={wins.has("ttftMs")} />
-            <Stat icon={Coins} label="Cost" value={formatUsd(m.costUsd)} best={wins.has("costUsd")} />
+            <Stat icon={CircleDollarSign} label="Cost" value={formatUsd(m.costUsd)} best={wins.has("costUsd")} />
           </dl>
         )}
       </header>
@@ -149,16 +149,26 @@ export function AnswerColumn({
           </span>
         )}
         {panel.output && (
-          <IconButton label={copied ? "Copied" : "Copy answer"} onClick={copy}>
+          <IconButton label={copied ? "Copied" : "Copy answer"} pressed={copied} onClick={copy} activeClass="text-emerald-600 dark:text-emerald-400">
             {copied ? <Check /> : <Copy />}
           </IconButton>
         )}
         {canVote && (
           <>
-            <IconButton label="Good answer" pressed={rating === "up"} onClick={() => onRate(rating === "up" ? null : "up")} activeClass="text-emerald-600 bg-emerald-500/10">
+            <IconButton
+              label={rating === "up" ? "Rated good (click to clear)" : "Good answer"}
+              pressed={rating === "up"}
+              onClick={() => onRate(rating === "up" ? null : "up")}
+              activeClass="text-emerald-600 bg-emerald-500/10"
+            >
               <ThumbsUp />
             </IconButton>
-            <IconButton label="Bad answer" pressed={rating === "down"} onClick={() => onRate(rating === "down" ? null : "down")} activeClass="text-destructive bg-destructive/10">
+            <IconButton
+              label={rating === "down" ? "Rated bad (click to clear)" : "Bad answer"}
+              pressed={rating === "down"}
+              onClick={() => onRate(rating === "down" ? null : "down")}
+              activeClass="text-destructive bg-destructive/10"
+            >
               <ThumbsDown />
             </IconButton>
             <IconButton
@@ -213,11 +223,14 @@ function IconButton({
       size="icon"
       className={cn("size-8", pressed && activeClass)}
       aria-label={label}
-      title={label}
+      tooltip={label}
       aria-pressed={pressed}
       onClick={onClick}
     >
-      {children}
+      {/* Re-keyed on toggle so the icon pops when it turns on: a visible confirmation of the click. */}
+      <span key={String(Boolean(pressed))} className={cn("inline-flex", pressed && "animate-in zoom-in-50 duration-300")}>
+        {children}
+      </span>
     </Button>
   );
 }

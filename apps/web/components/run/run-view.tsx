@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Coins, Gauge, History, Link2, ListChecks, ListOrdered, Loader2, MessagesSquare, Pencil, Scale, Square, Timer, Trophy } from "lucide-react";
+import { ArrowDownUp, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Gauge, History, Link2, ListChecks, ListOrdered, Loader2, MessagesSquare, Pencil, Scale, Square, Timer, Trophy } from "lucide-react";
 import type { ModelInfo, ModelSettings, PriorityWeights, Problem } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useModels } from "@/components/model-picker";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WithTooltip } from "@/components/ui/tooltip";
 import { RecommendationCard } from "@/components/compare/recommendation-card";
 import { RunHistory } from "@/components/compare/run-history";
 import { SynthesisCard } from "@/components/compare/synthesis-card";
@@ -29,11 +31,18 @@ const TABS = ["answers", "decision", "evidence", "cost"] as const;
 type Tab = (typeof TABS)[number];
 const isTab = (v: string): v is Tab => (TABS as readonly string[]).includes(v);
 
+const TAB_META: { value: Tab; label: string; hint: string; icon: typeof Trophy }[] = [
+  { value: "answers", label: "Answers", hint: "Read the answers side by side", icon: MessagesSquare },
+  { value: "decision", label: "Decision", hint: "The judge's verdict, the recommendation and the combined answer", icon: Scale },
+  { value: "evidence", label: "Evidence", hint: "Scores per criterion, with the judge's reasons", icon: ListChecks },
+  { value: "cost", label: "Cost and speed", hint: "What each answer cost and how fast it came", icon: Gauge },
+];
+
 /** The ways to order the answer columns. Each sorts best first; ties fall back to the order picked. */
 const ORDERS: { key: SortKey; label: string; icon: typeof Trophy }[] = [
   { key: "quality", label: "Judge score", icon: Trophy },
   { key: "total", label: "Fastest", icon: Timer },
-  { key: "cost", label: "Cheapest", icon: Coins },
+  { key: "cost", label: "Cheapest", icon: CircleDollarSign },
   { key: "order", label: "Order picked", icon: ListOrdered },
 ];
 
@@ -242,16 +251,16 @@ export function RunView({ id }: { id: string }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {running && (
-            <Button variant="outline" size="sm" onClick={stopRun}>
+            <Button variant="outline" size="sm" onClick={stopRun} tooltip="Stop the models that are still answering">
               <Square /> Stop
             </Button>
           )}
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" size="sm" asChild tooltip="Open the compare form with this prompt and these models">
             <Link href={`/?from=${encodeURIComponent(id)}`}>
               <Pencil /> Edit and rerun
             </Link>
           </Button>
-          <Button variant="outline" size="sm" onClick={copyLink} title="Copy a link to this run to share it">
+          <Button variant="outline" size="sm" onClick={copyLink} tooltip="Copy a link to this run to share it">
             {copied ? <Check /> : <Link2 />} {copied ? "Link copied" : "Copy link"}
           </Button>
           {running && (
@@ -282,89 +291,74 @@ export function RunView({ id }: { id: string }) {
       <Tabs value={tab} onValueChange={changeTab}>
         <div className="pointer-events-none sticky top-0 z-20 py-2">
           <TabsList className="pointer-events-auto w-full border shadow-sm sm:w-fit">
-            <TabsTrigger value="answers">
-              <MessagesSquare /> Answers
-            </TabsTrigger>
-            <TabsTrigger value="decision">
-              <Scale /> Decision
-              {decisionIsNew && <span className="bg-primary absolute top-1.5 right-1 size-1.5 rounded-full" aria-label="new" />}
-            </TabsTrigger>
-            <TabsTrigger value="evidence">
-              <ListChecks /> Evidence
-            </TabsTrigger>
-            <TabsTrigger value="cost">
-              <Gauge /> Cost<span className="hidden sm:inline"> and speed</span>
-            </TabsTrigger>
+            {TAB_META.map((t) => (
+              <WithTooltip key={t.value} text={t.hint} side="bottom">
+                <TabsTrigger value={t.value}>
+                  <t.icon />
+                  {t.value === "cost" ? (
+                    <span>
+                      Cost<span className="hidden sm:inline"> and speed</span>
+                    </span>
+                  ) : (
+                    t.label
+                  )}
+                  {t.value === "decision" && decisionIsNew && <span className="bg-primary absolute top-1.5 right-1 size-1.5 rounded-full" aria-label="new" />}
+                </TabsTrigger>
+              </WithTooltip>
+            ))}
           </TabsList>
         </div>
 
         <TabsContent value="answers" className="space-y-3">
           {state.order.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-muted-foreground text-sm">Order columns</span>
-              <div role="radiogroup" aria-label="Order columns" className="bg-muted inline-flex flex-wrap rounded-lg p-1">
-                {ORDERS.filter((o) => o.key !== "quality" || hasScores).map((o) => (
+            <div className="flex items-center gap-2">
+              {/* Chips jump to a column whenever the row scrolls sideways: always on phones, and with 4+ models. */}
+              <div className={cn("flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1", state.order.length <= 3 && "md:invisible")} aria-label="Jump to an answer">
+                {sortedModels.map((m) => (
                   <button
-                    key={o.key}
+                    key={m}
                     type="button"
-                    role="radio"
-                    aria-checked={orderKey === o.key}
-                    onClick={() => changeOrder(o.key)}
-                    className={cn(
-                      "focus-visible:ring-ring/50 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors outline-none focus-visible:ring-[3px] [&_svg]:size-3.5",
-                      orderKey === o.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                    )}
+                    className="bg-card hover:bg-accent flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors"
+                    onClick={() => document.getElementById(`answer-${m}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })}
                   >
-                    <o.icon /> {o.label}
+                    <span className="inline-block size-2 rounded-full" style={{ background: colorOf(m) }} />
+                    {label(m)}
                   </button>
                 ))}
               </div>
+              <SortMenu value={orderKey} options={ORDERS.filter((o) => o.key !== "quality" || hasScores)} onChange={changeOrder} />
             </div>
           )}
-          {/* On phones the columns swipe one at a time; these chips jump to one. */}
-          {state.order.length > 1 && (
-            <div className="flex gap-1.5 overflow-x-auto pb-1 md:hidden" aria-label="Jump to an answer">
+          <EdgeScroller enabled={state.order.length > 3} count={sortedModels.length}>
+            <div
+              className={cn(
+                // contain:paint stops mobile Chrome from zooming the page out to fit the off-screen columns.
+                "relative flex snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-2 max-md:[contain:paint] md:snap-none",
+                "[&>article]:w-[88%] [&>article]:shrink-0 [&>article]:snap-start",
+                state.order.length <= 3
+                  ? cn("md:grid md:overflow-visible md:[&>article]:w-auto", state.order.length === 2 ? "md:grid-cols-2" : state.order.length === 3 ? "md:grid-cols-3" : "md:grid-cols-1")
+                  : "md:[&>article]:w-[24rem]",
+              )}
+            >
               {sortedModels.map((m) => (
-                <button
+                <AnswerColumn
                   key={m}
-                  type="button"
-                  className="bg-card flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
-                  onClick={() => document.getElementById(`answer-${m}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })}
-                >
-                  <span className="inline-block size-2 rounded-full" style={{ background: colorOf(m) }} />
-                  {label(m)}
-                </button>
+                  panel={state.panels[m]!}
+                  label={label(m)}
+                  color={colorOf(m)}
+                  score={scores.get(m)}
+                  isWinner={verdict?.winnerModel === m}
+                  picked={vote === m}
+                  canVote={finished && state.panels[m]?.status === "done"}
+                  rating={ratings[m] ?? null}
+                  onRate={(r) => rate(m, r)}
+                  onPick={() => castVote(m)}
+                  wins={wins.get(m) ?? new Set()}
+                  pinHeader={state.order.length <= 3}
+                />
               ))}
             </div>
-          )}
-          <div
-            className={cn(
-              // contain:paint stops mobile Chrome from zooming the page out to fit the off-screen columns.
-              "flex snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-2 max-md:[contain:paint] md:snap-none",
-              "[&>article]:w-[88%] [&>article]:shrink-0 [&>article]:snap-start",
-              state.order.length <= 3
-                ? cn("md:grid md:overflow-visible md:[&>article]:w-auto", state.order.length === 2 ? "md:grid-cols-2" : state.order.length === 3 ? "md:grid-cols-3" : "md:grid-cols-1")
-                : "md:[&>article]:w-[24rem]",
-            )}
-          >
-            {sortedModels.map((m) => (
-              <AnswerColumn
-                key={m}
-                panel={state.panels[m]!}
-                label={label(m)}
-                color={colorOf(m)}
-                score={scores.get(m)}
-                isWinner={verdict?.winnerModel === m}
-                picked={vote === m}
-                canVote={finished && state.panels[m]?.status === "done"}
-                rating={ratings[m] ?? null}
-                onRate={(r) => rate(m, r)}
-                onPick={() => castVote(m)}
-                wins={wins.get(m) ?? new Set()}
-                pinHeader={state.order.length <= 3}
-              />
-            ))}
-          </div>
+          </EdgeScroller>
         </TabsContent>
 
         <TabsContent value="decision" className="space-y-4">
@@ -409,6 +403,102 @@ export function RunView({ id }: { id: string }) {
 
       <RunHistory open={historyOpen} onOpenChange={setHistoryOpen} currentId={id} label={label} />
 
+    </div>
+  );
+}
+
+function SortMenu({ value, options, onChange }: { value: SortKey; options: typeof ORDERS; onChange: (key: SortKey) => void }) {
+  const current = options.find((o) => o.key === value) ?? options[0]!;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="text-muted-foreground shrink-0" tooltip="Change the order of the answer columns">
+          <ArrowDownUp /> <span className="hidden sm:inline">Sort:</span> <span className="text-foreground">{current.label}</span>
+          <ChevronDown className="opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Order columns by</DropdownMenuLabel>
+        <DropdownMenuRadioGroup value={value} onValueChange={(v) => onChange(v as SortKey)}>
+          {options.map((o) => (
+            <DropdownMenuRadioItem key={o.key} value={o.key}>
+              <o.icon className="text-muted-foreground size-4" /> {o.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Fades the edge of a sideways-scrolling row and adds arrow buttons, so it is
+ * obvious that more answers sit off-screen. The arrows stay at mid-screen while
+ * you scroll down the (long) columns.
+ */
+function EdgeScroller({ enabled, count, children }: { enabled: boolean; count: number; children: React.ReactElement }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const scroller = () => wrap.current?.firstElementChild as HTMLElement | null | undefined;
+
+  const measure = useCallback(() => {
+    const el = scroller();
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setEdges({ left: el.scrollLeft > 4, right: el.scrollLeft < max - 4 });
+  }, []);
+
+  useEffect(() => {
+    const el = scroller();
+    if (!enabled || !el) return;
+    const frame = requestAnimationFrame(measure);
+    el.addEventListener("scroll", measure, { passive: true });
+    // Watch the columns too: the row's own size doesn't change when answers arrive.
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("scroll", measure);
+      ro.disconnect();
+    };
+  }, [enabled, measure, count]);
+
+  const step = (dir: 1 | -1) => {
+    const el = scroller();
+    const col = el?.firstElementChild as HTMLElement | null | undefined;
+    el?.scrollBy({ left: dir * ((col?.offsetWidth ?? 320) + 16), behavior: "smooth" });
+  };
+
+  if (!enabled) return children;
+  return (
+    <div ref={wrap} className="relative">
+      {children}
+      {(["left", "right"] as const).map((side) => (
+        <div
+          key={side}
+          aria-hidden={!edges[side]}
+          className={cn(
+            "pointer-events-none absolute inset-y-0 z-[15] w-16 transition-opacity duration-200 max-md:hidden",
+            side === "left" ? "from-page left-0 bg-gradient-to-r to-transparent" : "from-page right-0 bg-gradient-to-l to-transparent",
+            edges[side] ? "opacity-100" : "opacity-0",
+          )}
+        >
+          <div className={cn("sticky top-[45vh] flex", side === "left" ? "justify-start" : "justify-end")}>
+            <Button
+              variant="outline"
+              size="icon"
+              className={cn("rounded-full shadow-md", edges[side] && "pointer-events-auto")}
+              tabIndex={edges[side] ? 0 : -1}
+              aria-label={side === "left" ? "Previous answers" : "More answers"}
+              tooltip={side === "left" ? "Previous answers" : "More answers"}
+              onClick={() => step(side === "left" ? -1 : 1)}
+            >
+              {side === "left" ? <ChevronLeft /> : <ChevronRight />}
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calculator, ChevronRight, Coins, Timer } from "lucide-react";
+import { Calculator, ChevronRight, CircleDollarSign, Timer } from "lucide-react";
 import type { CallMetrics, JudgeScore, ModelInfo } from "@fomo/shared";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -83,7 +83,7 @@ function QualityVsCost({
     H = 220,
     pl = 30,
     pr = 16,
-    pt = 22,
+    pt = 12,
     pb = 34;
   const costs = points.map((p) => p.cost);
   const lo = Math.log10(Math.min(...costs) / 1.6);
@@ -113,12 +113,17 @@ function QualityVsCost({
           />
         )}
         {points.map((p) => (
-          <g key={p.model}>
-            <circle cx={x(p.cost)} cy={y(p.score)} r={6} fill={colorOf(p.model)} className={front.has(p.model) ? "stroke-foreground" : "stroke-none"} strokeWidth={1.5} />
-            <text x={x(p.cost)} y={y(p.score) - 10} textAnchor="middle" className="fill-muted-foreground text-[10px]">
-              {label(p.model)}
-            </text>
-          </g>
+          <circle
+            key={p.model}
+            cx={x(p.cost)}
+            cy={y(p.score)}
+            r={6}
+            fill={colorOf(p.model)}
+            className={front.has(p.model) ? "stroke-foreground" : "stroke-none"}
+            strokeWidth={1.5}
+          >
+            <title>{`${label(p.model)}: ${p.score}/10, ${formatUsd(p.cost)}`}</title>
+          </circle>
         ))}
         <text x={pl} y={H - 18} className="fill-muted-foreground text-[10px]">
           {formatUsd(Math.min(...costs))}
@@ -130,6 +135,18 @@ function QualityVsCost({
           Cost per call (log scale) →
         </text>
       </svg>
+      {/* A legend instead of on-chart labels: dots at similar cost and score would make labels collide. */}
+      <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+        {points.map((p) => (
+          <li key={p.model} className="flex items-center gap-1.5">
+            <span className={cn("inline-block size-2.5 rounded-full", front.has(p.model) && "ring-foreground ring-1")} style={{ background: colorOf(p.model) }} />
+            {label(p.model)}
+            <span className="text-muted-foreground tabular-nums">
+              {p.score}/10 · {formatUsd(p.cost)}
+            </span>
+          </li>
+        ))}
+      </ul>
       <figcaption className="text-muted-foreground mt-1 text-xs">
         Judge score (up) against cost (right). Outlined dots: nothing in this run is both cheaper and better.{" "}
         {beaten.length ? `${beaten.map((p) => label(p.model)).join(", ")} ${beaten.length === 1 ? "is" : "are"} beaten on both.` : "Every model here is a fair trade-off."}
@@ -207,7 +224,7 @@ export function SpeedCard({
               {ticks.map((t) => (
                 <span
                   key={t}
-                  className={cn("absolute top-0.5", t === 0 ? "" : t / max > 0.85 ? "-translate-x-full" : "-translate-x-1/2")}
+                  className={cn("absolute top-0.5 whitespace-nowrap", t === 0 ? "" : t / max > 0.85 ? "-translate-x-full" : "-translate-x-1/2")}
                   style={{ left: `${(t / max) * 100}%` }}
                 >
                   {formatMs(t)}
@@ -252,7 +269,7 @@ export function SpeedCard({
             </TableBody>
           </Table>
           <p className="text-muted-foreground mt-2 text-xs">
-            <Coins className="mr-1 inline size-3.5 align-[-2px]" />
+            <CircleDollarSign className="mr-1 inline size-3.5 align-[-2px]" />
             Green is best in the column. * includes hidden reasoning tokens, which are billed as output.
           </p>
         </div>
