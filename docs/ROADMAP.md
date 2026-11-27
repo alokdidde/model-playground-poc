@@ -4,6 +4,25 @@ The PoC answers "which of these models did best on *this* prompt?". If it gets t
 
 Each phase reuses what the previous one collected: comparisons, judge verdicts, human votes, eval results, cost and latency.
 
+## Why this matters to DigitalOcean
+
+DO earns money when customers send inference traffic through DO and keep it there. Model FOMO hurts that in two ways. Customers who aren't sure stay on a default model and never try others. Others leave for a provider whose "best model" they read about. Each phase below turns that uncertainty into more usage on DO:
+
+| Phase | What the customer gets | What DO gets | DO products it uses or sells |
+| --- | --- | --- | --- |
+| 1. Production ready | Use it on their own account and budget | Trial of more models per customer; a reason to sign in to the AI section | Serverless inference, App Platform, batch inference |
+| 2. Evals on your data | Evidence for their own workload | Stickiness: datasets and scheduled evals live on DO, and forced model upgrades become a DO-guided migration, not a reason to shop around | Serverless and batch inference, Spaces (datasets), Managed Postgres |
+| 3. Choose for me | `model: "auto"` routing at a quality bar | All of a customer's traffic goes through a DO endpoint; DO can shift volume to models with better margin at equal quality | Serverless inference, the agent platform |
+| 4. Make a better model | A tuned or distilled model that beats off-the-shelf | Higher-value workloads: fine-tuning jobs and dedicated GPU capacity | Dedicated inference, GPU Droplets, the agent platform (knowledge bases, agents) |
+
+**Why this order:** each phase needs the data the one before it collects. Routing (3) is only trustworthy once evals on customer data (2) exist, and fine-tuning (4) needs the preference pairs that 1 to 3 gather. It also ships value early. Phase 1 is weeks and uses only existing DO products.
+
+**What we would not build:** a public, general-purpose benchmark leaderboard. Those exist already, and they answer "which model is best in general", which is the wrong question. Our edge is the customer's own prompts.
+
+## The first thing to ship next
+
+**Judge/human agreement plus a cost estimate before each batch run.** Agreement tells us whether the combined view can be trusted, which everything after it depends on. A cost estimate removes the main reason a customer won't press "Run eval". Both are small (about a week) and use data and code that already exist.
+
 ## Phase 0: PoC (this repo)
 
 - Side-by-side streaming compare across DO serverless models, each with its own settings, with cost, latency and tokens.
@@ -13,7 +32,7 @@ Each phase reuses what the previous one collected: comparisons, judge verdicts, 
 
 ## Phase 1: Production-ready (weeks)
 
-Goal: something customers can use on their own account.
+Goal: something customers can use on their own account. *Size: 1 or 2 engineers, about 4 to 6 weeks. Main risk: per-customer limits and spend (a large batch eval on a customer's key can use up their quota).*
 
 - **Auth and tenancy**: DO account login (OAuth), per-team workspaces, each team's own model access key. The middleware hook and `principal` are already in place.
 - **Quotas and budgets**: per-team token budgets and spend caps on top of the lease store; show "this run will cost about $X" before starting a batch eval.
@@ -24,7 +43,7 @@ Goal: something customers can use on their own account.
 
 ## Phase 2: Evals on your own data (1-2 quarters)
 
-Goal: replace "vibes" with evidence on the customer's workload.
+Goal: replace "vibes" with evidence on the customer's workload. *Size: a small team (3 or 4 engineers). Main risk: judge quality on specialised domains. Mitigated by calibration against human labels and deterministic checks.*
 
 - **Datasets**: upload prompts (CSV/JSONL) with optional reference answers, or capture them from production traffic (opt-in, sampled, PII-scrubbed).
 - **Custom rubrics and graders**: per-dataset judge prompts, plus deterministic checks (JSON schema valid, regex, contains/doesn't contain, code compiles, exact match) mixed with LLM judges.
@@ -34,7 +53,7 @@ Goal: replace "vibes" with evidence on the customer's workload.
 
 ## Phase 3: Choose for me (2-3 quarters)
 
-Goal: the customer stops picking models by hand.
+Goal: the customer stops picking models by hand. *Size: the phase 2 team plus an ML engineer. Main risk: trust. A wrong route is a production incident for the customer, so start with shadow traffic and explicit quality bars.*
 
 - **Model recommendations**: "for prompts like yours, use X": a nearest-neighbour lookup over embeddings of past evaluated prompts, using judge scores and votes as labels.
 - **Smart routing endpoint**: an OpenAI-compatible endpoint where `model: "auto"` routes each request to the cheapest model predicted to meet a quality bar, using a small classifier trained on accumulated eval data. Customers set the policy (cost-optimised, quality-optimised, latency SLO).
@@ -42,9 +61,11 @@ Goal: the customer stops picking models by hand.
 - **Shadow and A/B traffic**: send a sample of live traffic to a candidate model in the background, judge offline, and promote it when it wins.
 - **Council / ensemble mode**: the PoC's synthesizer, promoted to an API: several models answer, then a synthesiser merges the best parts (mixture-of-agents), or models critique each other before a final answer. Higher cost and latency, for tasks where quality matters most. The compare view becomes its debugging UI.
 
+- **Potential: an agentic FOMO assistant.** The customer describes their use case in a chat. An agent picks candidate models, writes or collects sample prompts, runs the benchmarks (compare and batch evals through the existing APIs), and explains the tradeoffs, asking follow-up questions where the need is unclear. "Help me choose" is the first step: it already turns plain words into a task type, weights and sample prompts, and ranks from measured data. It stays out of the PoC on purpose. The brief asks for a side-by-side view, and an agent loop that spends the customer's tokens needs budgets, approval steps and evals of its own first. The same rule holds: the agent plans and explains, and the measured results make the decision.
+
 ## Phase 4: Make a better model (longer term)
 
-Goal: close the loop from preferences to a model tuned for the customer.
+Goal: close the loop from preferences to a model tuned for the customer. *Size: needs GPU capacity and an ML platform team. Main risk: cost and a long payback per customer, so it suits high-volume customers first.*
 
 - **Preference data**: every vote and judge verdict is a (prompt, chosen, rejected) pair, the exact format DPO-style fine-tuning needs.
 - **Fine-tune and distill**: fine-tune an open-weight model (or distill a large model's outputs into a small one) on that data, deploy it on DO dedicated inference, and evaluate it against the incumbents on the customer's dataset before switching traffic.
@@ -61,8 +82,8 @@ Goal: close the loop from preferences to a model tuned for the customer.
 
 ## Technical evolution that supports this
 
-- **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (config switch today).
+- **Lease store → Valkey** once call volume makes Postgres transactions per call noticeable (one more `LeaseStore` implementation behind the existing contract tests).
 - **Leaderboard → materialised views** refreshed by the worker; eventually a column store for analytics on millions of results.
 - **API → standalone gateway service** (the `llm` + `ratelimit` packages lift out unchanged) when the routing endpoint ships; at that point a Rust or Go proxy may be worth it for per-request overhead.
-- **App Platform → DOKS** (Helm chart already in `deploy/helm`) when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
+- **App Platform → DOKS** when we need queue-depth autoscaling, sidecars, or to self-host observability or small models next to the app.
 - **DBOS → Temporal** only if orchestration needs outgrow a single Postgres (multi-region, multi-team ownership); DBOS's workflow code maps closely onto Temporal's model.

@@ -4,10 +4,13 @@ Send one prompt to several LLMs on **DigitalOcean serverless inference**, each w
 
 **Live PoC:** https://model-fomo-qlrb3.ondigitalocean.app
 
-- Problem framing (personas, job to be done, success metrics, plan caveat): [docs/ARCHITECTURE.md §1](docs/ARCHITECTURE.md#1-the-problem)
+**Start here:**
 
-- Design choices and tradeoffs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Longer-term roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
+- [docs/DECISIONS.md](docs/DECISIONS.md): one page on what I built, what I skipped and why, the key tradeoffs, and feedback for DigitalOcean.
+- [docs/ROADMAP.md](docs/ROADMAP.md): the longer-term roadmap and why it matters to DO.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the deep dive (problem framing, both paths, reliability, rate limiting, API, deploy).
+- [docs/CODE_TOUR.md](docs/CODE_TOUR.md): the files that matter, in reading order.
+- [docs/DEMO.md](docs/DEMO.md): a 5-minute demo script.
 
 ## What's in the box
 
@@ -16,7 +19,7 @@ Send one prompt to several LLMs on **DigitalOcean serverless inference**, each w
 | `apps/web` | Next.js 15 (App Router) + shadcn/ui. UI and HTTP API (compare over SSE, evals, leaderboard). |
 | `apps/worker` | DBOS worker that runs batch evals as durable workflows on Postgres-backed queues. |
 | `packages/llm` | `ModelGateway` (retries, timeouts, rate limiting), DO Gradient provider, mock provider, LLM judge. |
-| `packages/ratelimit` | Token + request leasing with Postgres (default), Redis/Valkey, or in-memory stores. |
+| `packages/ratelimit` | Token + request leasing, shared through Postgres (in-memory store for tests). |
 | `packages/db` | Prisma schema and client. |
 | `packages/shared` | zod request schemas, SSE event types, RFC 9457 problem types. |
 
@@ -27,7 +30,7 @@ Requirements: Node 22+, pnpm 10, Docker (for Postgres).
 ```bash
 pnpm install
 cp .env.example .env              # mock mode by default: no access key needed, no tokens spent
-docker compose up -d              # Postgres (add --profile redis for Valkey)
+docker compose up -d              # Postgres
 pnpm db:generate && pnpm db:deploy
 pnpm dev                          # web on http://localhost:3000 + the worker
 ```
@@ -41,11 +44,11 @@ Mock mode streams canned answers with realistic delays and randomly injects 429s
 ```bash
 pnpm typecheck
 pnpm test
-# Also run the lease-store contract tests against real Postgres and Valkey:
-TEST_DATABASE_URL=postgresql://fomo:fomo@localhost:5432/fomo TEST_REDIS_URL=redis://localhost:6379 pnpm test
+# Also run the lease-store contract tests against real Postgres:
+TEST_DATABASE_URL=postgresql://fomo:fomo@localhost:5432/fomo pnpm test
 ```
 
-CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with Postgres and Valkey service containers) and a production build.
+CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with a Postgres service container) and a production build.
 
 ## API at a glance
 
@@ -74,18 +77,13 @@ curl -N localhost:3000/api/compare -H 'content-type: application/json' \
 
 ## Deploy to DigitalOcean App Platform
 
-`.do/app.yaml` defines the web service, the worker, a `PRE_DEPLOY` migration job and a Managed Postgres database. All three components build from the root `Dockerfile`, which picks its final stage from the `COMPONENT` build arg.
+`.do/app.yaml` defines the web service, the worker, and a `PRE_DEPLOY` migration job, against an existing Managed Postgres cluster. All three build from the root `Dockerfile`, which picks its final stage from the `COMPONENT` build arg.
 
 ```bash
 # 1. Give DigitalOcean access to the GitHub repo (control panel → Apps → Create → GitHub), once.
-# 2. Set the secrets in the spec (or the app's settings): DO_MODEL_ACCESS_KEY, and if you
-#    attach an existing cluster instead of the spec's databases block, DATABASE_URL,
-#    DBOS_SYSTEM_DATABASE_URL and DATABASE_CA_CERT (doctl databases get-ca <id>).
+# 2. Set the secrets in the app's settings: DO_MODEL_ACCESS_KEY, DATABASE_URL,
+#    DBOS_SYSTEM_DATABASE_URL, and DATABASE_CA_CERT (doctl databases get-ca <id>).
 doctl apps create --spec .do/app.yaml
 ```
 
-The live PoC uses 1 web + 1 worker instance and an existing `db-s-1vcpu-1gb` cluster; see [ARCHITECTURE §8](docs/ARCHITECTURE.md#8-deployment-on-app-platform) for why, the TLS gotcha with DBOS, and when to move to DOKS.
-
-### Kubernetes (documented, not provisioned)
-
-`deploy/helm/model-fomo` is a Helm chart for DigitalOcean Kubernetes: web Deployment + Service + Ingress, worker Deployment, the migration as a pre-install/pre-upgrade hook Job, Secrets, probes and resource limits. See its [README](deploy/helm/model-fomo/README.md). App Platform remains the deploy target; the chart is the documented scale-out path.
+The spec is exactly what the live PoC runs: 1 web + 1 worker instance, deployed from `main`, with an existing `db-s-1vcpu-1gb` cluster wired in by secret URLs. See [ARCHITECTURE §8](docs/ARCHITECTURE.md#8-deployment-on-app-platform) for why, the TLS gotcha with DBOS, and when to move to DOKS.

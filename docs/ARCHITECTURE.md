@@ -31,7 +31,7 @@
 4. **Batch evals.** One prompt is an anecdote. A batch run takes a prompt set × model set, runs every call in a durable worker, judges each prompt, and feeds a leaderboard that can be cut by task type.
 5. **Validate on my prompts.** From a compare result, one click turns that compare into a batch eval over the user's own prompts, with the same models, per-model settings, task type and priority. The run page recomputes the recommendation from the averages across all prompts.
 
-Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-compatible, `https://inference.do-ai.run/v1`, model access key), compute on **App Platform**, state in **Managed Postgres**, optionally **Managed Caching (Valkey)**.
+Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-compatible, `https://inference.do-ai.run/v1`, model access key), compute on **App Platform**, state in **Managed Postgres**.
 
 ### Caveat: what this account can call
 
@@ -49,7 +49,7 @@ flowchart LR
   end
   W -- "every model call" --> G[ModelGateway]
   K -- "every model call" --> G
-  G -- "lease: requests + tokens" --> L[(Lease store: Postgres or Valkey)]
+  G -- "lease: requests + tokens" --> L[(Lease store: Postgres)]
   G -- "OpenAI-compatible HTTPS" --> DO[DO serverless inference]
   W -- "Prisma" --> P[(Managed Postgres)]
   K -- "Prisma" --> P
@@ -78,7 +78,7 @@ apps/web            Next.js App Router: UI, API routes, middleware
 apps/worker         DBOS worker: eval workflows and queues
 packages/shared     zod request schemas, SSE event types, RFC 9457 types (used by server AND client)
 packages/llm        ModelGateway, Gradient + mock providers, judge, model catalog/pricing
-packages/ratelimit  Lease-based rate limiter with Postgres / Redis / memory stores
+packages/ratelimit  Lease-based rate limiter with Postgres / memory stores
 packages/db         Prisma schema, migrations, client
 ```
 
@@ -281,20 +281,19 @@ base      = learned limit × 0.9, or the configured fallback
 effective = base × aimdFactor × (lane == batch ? batchShare : 1)
 ```
 
-### Lease stores: Valkey recommended, Postgres fallback
+### Lease store: Postgres
 
-`LeaseStore` is a small interface (`tryAcquire(bucket, tokens, limits, lane)`, `release`, `coolDown`, `observe`) with three implementations that pass the same contract test suite (lanes, learned limits, AIMD, reconciliation, cooldowns, and "20 concurrent acquires never over-grant"), run against real Valkey and Postgres locally.
+`LeaseStore` is a small interface (`tryAcquire(bucket, tokens, limits, lane)`, `release`, `coolDown`, `observe`) with two implementations that pass the same contract test suite (lanes, learned limits, AIMD, reconciliation, cooldowns, and "20 concurrent acquires never over-grant"), run against real Postgres in CI.
 
-| | Valkey (DO Managed Caching) | Postgres | Memory |
-| --- | --- | --- | --- |
-| Selected by | `LEASE_STORE=redis` or just `REDIS_URL` set | `LEASE_STORE=postgres` (default without `REDIS_URL`) | `LEASE_STORE=memory` |
-| Atomicity | One Lua script per operation (`EVALSHA`) | Transaction + `pg_advisory_xact_lock(hashtext(bucket))` | Single thread |
-| Clock | Valkey `TIME` | Database `now()` | Process clock |
-| Learned limits + AIMD factor | In Valkey, shared by every instance | Per process | Per process |
-| Cost per acquire | One round trip (<1 ms) | A short transaction (~1-3 ms) | None |
-| Good for | Production: many instances, high call rates | No extra infra; moderate traffic | Unit tests, one process |
+| | Postgres (live) | Memory |
+| --- | --- | --- |
+| Selected by | `LEASE_STORE=postgres` (default) | `LEASE_STORE=memory` |
+| Atomicity | Transaction + `pg_advisory_xact_lock(hashtext(bucket))` | Single thread |
+| Clock | Database `now()` | Process clock |
+| Learned limits + AIMD factor | Per process | Per process |
+| Good for | Web + worker sharing one budget, with no extra infrastructure | Unit tests, one process |
 
-Valkey is the better fit: leases are short-lived counters, Lua makes check-and-take one atomic step without table locks, keys expire on their own (no cleanup), and learned limits and the AIMD factor are shared, so one instance's 429 slows everyone down. Keys for a bucket share a `{hash tag}`, so they land on one shard if the cluster is ever sharded. **The live PoC runs on Postgres**: the DO team account is at its database cluster limit, so no new Valkey cluster was created; switching is one secret (`REDIS_URL`) and a redeploy. Postgres stays as the fallback behind the same interface: zero extra infrastructure, and at tens of calls per second a short transaction is negligible next to a multi-second model call. Losing Valkey loses only the last minute of lease history; the worst case is a brief burst of 429s, which the retry and AIMD logic absorb.
+Postgres is already there for app data and DBOS, and at tens of calls per second a 1-3 ms transaction is negligible next to a multi-second model call. **Why not Valkey (DO Managed Caching)?** It is the better store at high call rates (one atomic Lua script per acquire, keys that expire on their own, learned limits shared across instances), and an earlier version of this repo had one. It was removed: the live app never used it (the account is at its database cluster limit), and an unused store is code to maintain and defend for no benefit. Adding it back is one more `LeaseStore` implementation behind the same contract tests.
 
 Two layers of flow control exist in the batch path and that's deliberate: DBOS queue concurrency and rate limits are **coarse, per-worker** limits that stop the worker from starting hundreds of steps that would only sit waiting; the lease store is the **precise, global** budget shared with the web app.
 
@@ -386,14 +385,14 @@ Operational notes: each process opens a Prisma pool plus a DBOS pool. Small mana
 
 ### Why App Platform, and when DOKS
 
-| | App Platform (chosen) | DOKS + Helm (documented, not provisioned) |
+| | App Platform (chosen) | DOKS (documented, not provisioned) |
 | --- | --- | --- |
 | Setup | One spec file, builds from GitHub on push, managed TLS and load balancing. | Cluster, ingress controller, cert-manager, registry, image builds in CI. |
 | Cost at PoC size | ~$36/mo (2 × 1 GB containers) | ~$41/mo minimum (1 × 4 GB node $24 + load balancer $12 + registry $5), more for HA. |
 | Operations | Nothing to patch; logs and metrics built in. | Node upgrades, ingress, cert renewals, observability are ours. |
 | Flexibility | No sidecars, no custom autoscaling signals, no GPU, per-component sizes only. | Anything Kubernetes can do: HPA on queue depth, sidecars (OTel collector), co-located self-hosted models or observability (Langfuse/SigNoz). |
 
-App Platform is the right call for the PoC and for a first production version. Move to DOKS when one of these becomes true: the worker needs to autoscale on queue depth, we self-host something next to the app (observability stack, a reranker, a small fine-tuned model on GPU nodes), or several services share one cluster. The Helm chart in `deploy/helm/model-fomo` is ready for that move (web Deployment + Service + Ingress, worker Deployment, migration Job as a pre-install/pre-upgrade hook, Secrets, probes and resources). We briefly provisioned a cluster and deleted it unused: for one app, the extra moving parts bought nothing yet.
+App Platform is the right call for the PoC and for a first production version. Move to DOKS when one of these becomes true: the worker needs to autoscale on queue depth, we self-host something next to the app (observability stack, a reranker, a small fine-tuned model on GPU nodes), or several services share one cluster. We briefly provisioned a cluster and deleted it unused, and a Helm chart for it was removed from the repo too: for one app, the extra moving parts bought nothing yet, and an untested chart is not a migration path.
 
 ## 9. Technology choices and tradeoffs
 
@@ -403,7 +402,7 @@ App Platform is the right call for the PoC and for a first production version. M
 | **Next.js route handlers as the API** | One deployable for UI and API, native streaming responses. | API scaling is coupled to UI scaling. If the API grows, the `llm`/`ratelimit` packages lift out into a standalone service unchanged. |
 | **OpenAI SDK against DO's endpoint** | DO serverless inference is OpenAI-compatible; the official SDK gives typed streaming and error classes. | Provider-specific features (if any) need a different client. `ChatProvider` is the seam. |
 | **Prisma** | Typed queries, migrations, readable schema. | Raw SQL is still used where it's clearer (advisory locks in the lease store). |
-| **Postgres for everything** (data, workflows, leases) | One managed dependency to run, back up and reason about. | It becomes the bottleneck first; Valkey for leases is already a config switch. |
+| **Postgres for everything** (data, workflows, leases) | One managed dependency to run, back up and reason about. | It becomes the bottleneck first; leases are the first thing to move to Valkey (one more `LeaseStore`). |
 | **SSE over WebSockets** | One-way stream, plain HTTP, trivial client. | No client-to-server messages mid-stream (not needed: cancel = close the request). |
 | **LLM-as-judge for the combined view** | Scales, explains itself, works on any prompt with no labels. | Biased and fallible; mitigated (section 3) and paired with human votes. |
 
