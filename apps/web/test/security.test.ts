@@ -14,9 +14,10 @@ vi.mock("../lib/server/services", () => ({
   getGateway: () => ({
     provider: {
       listModels: async () => [
-        { id: "glm-5.3-flash", kind: "chat" },
-        { id: "openai-gpt-oss-120b", kind: "chat" },
-        { id: "bge-embed", kind: "embedding" },
+        { id: "glm-5.3-flash", kind: "chat", available: true },
+        { id: "openai-gpt-oss-120b", kind: "chat", available: true },
+        { id: "anthropic-claude-test", kind: "chat", available: false },
+        { id: "bge-embed", kind: "embedding", available: false },
       ],
     },
   }),
@@ -85,6 +86,12 @@ describe("compare model ids must come from the catalog", () => {
     expect(await unknownModels(input(many))).toHaveLength(500);
     const problems = await unknownModels(input(["glm-5.3-flash", "bge-embed"], "nope"));
     expect(problems.map((p) => p.pointer)).toEqual(["body.models.1", "body.judge.model"]);
+  });
+
+  it("rejects chat models the plan cannot call, instead of letting them fail with a 403", async () => {
+    const { unknownModels } = await import("../lib/server/compare-service");
+    const problems = await unknownModels(input(["glm-5.3-flash", "anthropic-claude-test"]));
+    expect(problems.map((p) => p.pointer)).toEqual(["body.models.1"]);
   });
 });
 

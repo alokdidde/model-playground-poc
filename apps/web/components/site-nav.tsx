@@ -35,7 +35,6 @@ export function SiteNav() {
             </Link>
           ))}
         </div>
-        <span className="text-muted-foreground ml-auto hidden text-xs lg:block">Powered by DigitalOcean serverless inference</span>
       </nav>
     </header>
   );

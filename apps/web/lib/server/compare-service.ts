@@ -95,7 +95,7 @@ export async function unknownModels(input: Pick<CompareRequest, "models" | "judg
     .catch(() => {
       throw errors.unavailable("Could not load the model catalog from the provider. Try again shortly.");
     });
-  const chat = new Set(catalog.filter((m) => m.kind === "chat").map((m) => m.id));
+  const chat = new Set(catalog.filter((m) => m.kind === "chat" && m.available).map((m) => m.id));
   const problems: FieldError[] = input.models.flatMap((id, i) =>
     chat.has(id) ? [] : [{ pointer: `body.models.${i}`, message: `Unknown chat model "${id}"` }],
   );
