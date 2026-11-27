@@ -129,7 +129,8 @@ async function judgeOnce(gateway: ModelGateway, input: JudgeInput, ordered: Cand
       { role: "system" as const, content: JUDGE_SYSTEM_PROMPT },
       { role: "user" as const, content: buildJudgePrompt(input.prompt, labelled, input.taskType) },
     ],
-    maxTokens: 800,
+    // One score line per answer plus the rationale; grows with the number of answers.
+    maxTokens: judgeMaxTokens(ordered.length),
     temperature: 0,
   };
 
@@ -215,4 +216,9 @@ function deAnonymise(rationale: string, labelToModel: Map<string, string>): stri
     const model = labelToModel.get(label);
     return model ? `${match} (${model})` : match;
   });
+}
+
+/** Room for the JSON verdict: about 60 tokens per score line, plus the rationale and some reasoning. */
+export function judgeMaxTokens(candidates: number): number {
+  return Math.max(800, 500 + 60 * candidates);
 }

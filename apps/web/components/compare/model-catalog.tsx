@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Check, ChevronDown, Layers, Search } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, Layers, Plus, Search } from "lucide-react";
 import type { ModelInfo } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,11 +51,14 @@ export function ModelCatalog({
   selectedIds,
   canAddMore,
   onAdd,
+  onAddMany,
 }: {
   models: ModelInfo[];
   selectedIds: string[];
   canAddMore: boolean;
   onAdd: (id: string) => void;
+  /** Adds every model in the list that can be compared (the caller enforces the cap). */
+  onAddMany: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [providers, setProviders] = useState<string[]>([]);
@@ -92,6 +95,9 @@ export function ModelCatalog({
     };
     return out.sort(sorters[sort]);
   }, [models, query, providers, tags, price, speed, sort, showAll]);
+
+  // What "Add all" would add: the models shown right now (after search and filters) that can be compared.
+  const addable = visible.filter((m) => m.kind === "chat" && m.available && !selectedIds.includes(m.id)).map((m) => m.id);
 
   const toggle = (list: string[], value: string, set: (v: string[]) => void) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -159,6 +165,11 @@ export function ModelCatalog({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          {addable.length > 1 && (
+            <Button variant="outline" size="sm" disabled={!canAddMore} title={canAddMore ? undefined : "Model limit reached"} onClick={() => onAddMany(addable)}>
+              <Plus /> Add all {addable.length}
+            </Button>
+          )}
           {hiddenCount > 0 && (
             <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs" title="Models your plan can't call, and embedding / image / audio models">
               <Checkbox checked={showAll} onCheckedChange={(v) => setShowAll(v === true)} /> Show {hiddenCount} more

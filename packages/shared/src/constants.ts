@@ -1,6 +1,10 @@
 /** Hard limits that keep a single request bounded in cost and time. */
 export const LIMITS = {
-  maxModelsPerCompare: 6,
+  /**
+   * Enough for every chat model DO offers today (18 on our plan), still bounded
+   * so one request can't fan out without limit. Judge labels run A-Z, so keep <= 26.
+   */
+  maxModelsPerCompare: 24,
   maxPromptChars: 20_000,
   maxSystemPromptChars: 4_000,
   maxOutputTokens: 4_096,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MockProvider } from "../src/mock-provider";
 import { ModelGateway } from "../src/gateway";
-import { combineOrders, parseVerdict, pickJudgeModel, runJudge, shuffle, type OneOrder } from "../src/judge";
+import { combineOrders, parseVerdict, judgeMaxTokens, pickJudgeModel, runJudge, shuffle, type OneOrder } from "../src/judge";
 import { limiter } from "./helpers";
 
 describe("pickJudgeModel", () => {
@@ -121,3 +121,10 @@ describe("runJudge order", () => {
   });
 });
 
+
+describe("judgeMaxTokens", () => {
+  it("leaves room for one score line per answer", () => {
+    expect(judgeMaxTokens(2)).toBe(800);
+    expect(judgeMaxTokens(18)).toBe(1_580);
+  });
+});

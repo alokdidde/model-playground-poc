@@ -147,6 +147,7 @@ export function CompareView() {
             selectedIds={selected.map((m) => m.id)}
             canAddMore={selected.length < LIMITS.maxModelsPerCompare}
             onAdd={(id) => setSelected((s) => [...s, newSelection(id)])}
+            onAddMany={(ids) => setSelected((s) => [...s, ...ids.slice(0, LIMITS.maxModelsPerCompare - s.length).map(newSelection)])}
           />
         </div>
         <div className="order-1 min-w-0 space-y-6 lg:order-2">
