@@ -9,7 +9,7 @@ import {
   problemFromModelError,
   runJudge,
 } from "@fomo/llm";
-import { PROBLEM_TYPES, type CompareEvent, type CompareRequest, type RunStatus } from "@fomo/shared";
+import { PROBLEM_TYPES, type CompareEvent, type CompareRequest, type FieldError, type RunStatus } from "@fomo/shared";
 import { errors } from "./errors";
 import { logger } from "./logger";
 import { getGateway, prisma } from "./services";
@@ -55,6 +55,8 @@ export function isAbandoned(c: { status: string; createdAt: Date }): boolean {
  * rather than an error buried inside an event stream.
  */
 export async function createComparison(input: CompareRequest, requestId: string, idempotencyKey?: string): Promise<Comparison> {
+  const unknown = await unknownModels(input);
+  if (unknown.length > 0) throw errors.validation(unknown, "Some models are not in the catalog.");
   const unsupported = unsupportedSettings(input.modelSettings);
   if (unsupported.length > 0) throw errors.validation(unsupported, "Some models do not accept the settings sent for them.");
   if (idempotencyKey) {
@@ -79,6 +81,28 @@ export async function createComparison(input: CompareRequest, requestId: string,
       requestId,
     },
   });
+}
+
+/**
+ * Every model (and an explicit judge) must be a chat model from the catalog.
+ * There is no fixed cap on how many models a compare may use, so this is what
+ * bounds one request: at most one call per catalog model (plus judge and
+ * synthesis), instead of as many calls as the body has room for.
+ */
+export async function unknownModels(input: Pick<CompareRequest, "models" | "judge">): Promise<FieldError[]> {
+  const catalog = await getGateway()
+    .provider.listModels()
+    .catch(() => {
+      throw errors.unavailable("Could not load the model catalog from the provider. Try again shortly.");
+    });
+  const chat = new Set(catalog.filter((m) => m.kind === "chat").map((m) => m.id));
+  const problems: FieldError[] = input.models.flatMap((id, i) =>
+    chat.has(id) ? [] : [{ pointer: `body.models.${i}`, message: `Unknown chat model "${id}"` }],
+  );
+  if (input.judge.model && !chat.has(input.judge.model)) {
+    problems.push({ pointer: "body.judge.model", message: `Unknown chat model "${input.judge.model}"` });
+  }
+  return problems;
 }
 
 export interface ComparisonSummary {
@@ -199,7 +223,7 @@ async function runComparison(
         return { model, output, ok: true as const };
       } catch (error) {
         const problem = problemFromModelError(error, model);
-        logger.warn("model call failed", { comparisonId: comparison.id, model, problem });
+        logger.warn("model call failed", { comparisonId: comparison.id, model, problem, error: errorText(error) });
         await prisma.compareResult
           .create({
             data: {
@@ -296,6 +320,7 @@ async function runJudgeStep(
     });
     emit({ type: "judge.completed", verdict });
   } catch (error) {
+    logger.warn("judge failed", { comparisonId, error: errorText(error) });
     emit({ type: "judge.failed", problem: problemFromModelError(error, judge.judgeModel) });
   }
 }
@@ -320,8 +345,14 @@ async function runSynthesisStep(
     await prisma.comparison.update({ where: { id: comparisonId }, data: { synthesis: output, synthesisModel: model } });
     emit({ type: "synthesis.completed", model, output, metrics });
   } catch (error) {
+    logger.warn("synthesis failed", { comparisonId, error: errorText(error) });
     emit({ type: "synthesis.failed", problem: problemFromModelError(error, model) });
   }
+}
+
+/** For logs only: the client gets a sanitised problem instead (problemFromModelError). */
+function errorText(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
 async function finish(id: string, status: RunStatus) {

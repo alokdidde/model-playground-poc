@@ -48,11 +48,14 @@ export function problemFromModelError(error: unknown, model: string): Problem {
       model,
     };
   }
+  // Anything else is our bug (a DB error, a TypeError...). Its message can hold
+  // internals, and this problem is streamed to the browser and stored, so it
+  // gets a generic detail; the caller logs the real error.
   return {
     type: PROBLEM_TYPES.internal,
     title: "Unexpected error calling the model",
     status: 500,
-    detail: error instanceof Error ? error.message : String(error),
+    detail: "Something went wrong on our side. Quote the requestId when reporting it.",
     model,
   };
 }
