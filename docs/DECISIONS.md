@@ -94,6 +94,7 @@ References:
 - **This account can't call Anthropic or proprietary OpenAI models (403).** So the demo can't show "open model vs frontier model", which is the most common FOMO question.
 - **Costs use a static price table**, and tokens from failed attempts are not counted.
 - **A compare whose browser disconnects is cancelled**, not finished in the background.
+- **Batch evals are slower than DO allows.** The batch lane gets 30% of each model (4 calls in flight), even when nobody is comparing. A 100-prompt eval takes about 8 minutes. Stress tests, gaps against published practice, and the fixes are in [RATE_LIMITS.md](RATE_LIMITS.md).
 
 ## Feedback for DigitalOcean
 
@@ -103,6 +104,7 @@ What I ran into while building on DO's AI stack, and what would have helped. Eac
 | --- | --- | --- |
 | Anthropic and proprietary OpenAI models return `403 not available for your subscription tier`, but `GET /v1/models` lists them anyway. | We had to probe every model to learn what this key can call. A customer's first compare can fail on models they were shown. | Filter the models list by what the key can call, or add an `available` flag with the reason. |
 | Per-model rate limits aren't documented. They are 120 requests/min per model, with different token limits per model. | We had to learn them from `x-ratelimit-*` headers. Most clients will just hit 429s. | Document the limits per model and tier, and say that they are counted per (key, model). |
+| 429s carry no `Retry-After`, and the `reset` header points at the end of the minute while capacity actually comes back gradually (a sliding window counter). Once in a while it is a few seconds off. | Clients have to guess when to retry, and the honest guess (wait for `reset`) is sometimes too long and sometimes too short. | Send `Retry-After` on every 429 and document the window algorithm. Measured in [RATE_LIMITS.md](RATE_LIMITS.md). |
 | `x-ratelimit-remaining-tokens-per-day` showed about 10% of the limit right after light use. | Hard to tell whether the daily quota is shared, already spent, or reported wrong. | Document what the daily counter covers, or show usage against it in the control panel. |
 | Models accept different parameters: Kimi rejects `temperature` and `top_p`, and some models reject `reasoning_effort`. | Requests fail with 400s that look like bugs on the caller's side. | Publish per-model capabilities in the models API. |
 | The docs don't say whether `stream_options.include_usage` is supported. | Streaming token counts (and so cost) may be estimates. | State it in the API reference. |

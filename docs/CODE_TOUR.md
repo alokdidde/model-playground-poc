@@ -61,6 +61,7 @@ Pure functions. Each model gets quality (judge / 10), cost (cheapest / this) and
 A bucket is per (hashed key, model). A lease reserves 1 request plus estimated tokens in a 60 s sliding window, and is reconciled with real usage afterwards. `policy.ts` holds the arithmetic: learned limit × 0.9 × AIMD factor × (batch share if batch). `postgres-store.ts` makes check-and-take atomic with `pg_advisory_xact_lock(hashtext(bucket))` and uses the database clock.
 
 - **Expect:** "Why an advisory lock and not `SELECT … FOR UPDATE`?" There is no single row to lock, because the bucket is a set of lease rows. The lock is per bucket, so different models never block each other, and it is released on commit or rollback. "What is AIMD for?" It finds the real capacity when someone else shares the key: halve the factor on a 429, then add a little back on each success. "Why a lease TTL?" A crashed caller can't hold capacity forever. The TTL (150 s) is longer than the longest attempt (120 s).
+- **Observability:** `events.ts` defines one event per limiter or retry decision. `RateLimiter` and `ModelGateway` emit them, and `PostgresEventSink` writes them in one insert per second. `/ops/rate-limits` (`apps/web/app/ops/rate-limits/page.tsx`) draws them. **Expect:** "Why not OTel?" These are domain decisions (why a call waited, what a retry slept), not spans, and Postgres is already there. An OTel exporter would be one more `RateEventSink`. "Why does a 429 retry wait for the reset header?" DO sends no `Retry-After`, and [RATE_LIMITS.md](RATE_LIMITS.md) has the measurements.
 
 ## 10. The batch path: `apps/worker/src/workflows.ts`, `activities.ts`, `apps/web/lib/server/evals-service.ts`
 
@@ -71,7 +72,7 @@ The web app writes the run and enqueues `evalRunWorkflow` with the run id as the
 
 ## 11. Data: `packages/db/prisma/schema.prisma`
 
-`Comparison` → `CompareResult`, `Judgement`, `Vote`. `EvalRun` → `EvalPrompt` → `EvalResult`. `rate_lease` and `rate_cooldown` back the lease store. DBOS keeps its own tables.
+`Comparison` → `CompareResult`, `Judgement`, `Vote`. `EvalRun` → `EvalPrompt` → `EvalResult`. `rate_lease` and `rate_cooldown` back the lease store, and `rate_event` records its decisions. DBOS keeps its own tables.
 
 - **Expect:** "Why aggregate the leaderboard on read?" It's fine at PoC scale. The next step is a materialised view refreshed by the worker.
 
