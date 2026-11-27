@@ -24,21 +24,43 @@ export class GradientProvider implements ChatProvider {
   readonly name = "gradient";
   private readonly client: OpenAI;
   private modelsCache?: { at: number; models: ModelInfo[] };
+  private modelsRefresh?: Promise<ModelInfo[]>;
 
   constructor(private readonly config: GradientConfig) {
     this.client = new OpenAI({ baseURL: config.baseUrl, apiKey: config.apiKey, maxRetries: 0 });
   }
 
+  /**
+   * The catalog, cached. Every compare validates its models against it, so it
+   * must not cost a provider round trip on the hot path: after the first load,
+   * a stale list (older than 5 minutes) is returned at once and refreshed in
+   * the background. Only the very first call waits for the provider.
+   */
   async listModels(): Promise<ModelInfo[]> {
-    if (this.modelsCache && Date.now() - this.modelsCache.at < 5 * 60_000) return this.modelsCache.models;
-    try {
-      const page = await this.client.models.list();
-      const models = page.data.map((m) => describeModel(m.id)).sort((a, b) => a.label.localeCompare(b.label));
-      this.modelsCache = { at: Date.now(), models };
-      return models;
-    } catch (error) {
-      throw toUpstreamError(error);
+    const cached = this.modelsCache;
+    if (cached) {
+      if (Date.now() - cached.at >= 5 * 60_000) void this.refreshModels().catch(() => undefined);
+      return cached.models;
     }
+    return this.refreshModels();
+  }
+
+  /** One provider call at a time, however many requests want a fresh list. */
+  private refreshModels(): Promise<ModelInfo[]> {
+    this.modelsRefresh ??= this.client.models
+      .list()
+      .then((page) => {
+        const models = page.data.map((m) => describeModel(m.id)).sort((a, b) => a.label.localeCompare(b.label));
+        this.modelsCache = { at: Date.now(), models };
+        return models;
+      })
+      .catch((error: unknown) => {
+        throw toUpstreamError(error);
+      })
+      .finally(() => {
+        this.modelsRefresh = undefined;
+      });
+    return this.modelsRefresh;
   }
 
   async complete(request: ChatRequest, signal: AbortSignal): Promise<ChatResult> {

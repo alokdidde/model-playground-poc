@@ -56,6 +56,10 @@ export function CompareView() {
   const [error, setError] = useState<Problem>();
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  // Load the run page's code while the user writes the prompt, so pressing Compare doesn't wait for it.
+  // The id is a placeholder: only the route's code and loading screen are fetched.
+  useEffect(() => router.prefetch("/runs/prefetch"), [router]);
+
   async function run() {
     setStarting(true);
     setError(undefined);
@@ -143,6 +147,7 @@ export function CompareView() {
             customPriority={customPriority}
             onCustomPriorityChange={setCustomPriority}
             running={false}
+            starting={starting}
             canRun={!starting && Boolean(prompt.trim()) && selected.length > 0}
             modelCount={selected.length}
             onRun={run}
