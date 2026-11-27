@@ -2,26 +2,40 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, History, Link2, Loader2, Pencil, Square } from "lucide-react";
+import { ArrowLeft, Check, Coins, Gauge, History, Link2, ListChecks, ListOrdered, Loader2, MessagesSquare, Pencil, Scale, Square, Timer, Trophy } from "lucide-react";
 import type { ModelInfo, ModelSettings, PriorityWeights, Problem } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useModels } from "@/components/model-picker";
-import { JudgePanel } from "@/components/compare/judge-panel";
-import { MetricsTable } from "@/components/compare/metrics-table";
-import { ModelPanel, type Rating } from "@/components/compare/model-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RecommendationCard } from "@/components/compare/recommendation-card";
 import { RunHistory } from "@/components/compare/run-history";
-import { AnswerSort } from "@/components/run/answer-sort";
 import { SynthesisCard } from "@/components/compare/synthesis-card";
+import { AnswerColumn, type Rating } from "@/components/run/answer-column";
+import { CostCard, SpeedCard } from "@/components/run/cost-speed";
+import { EvidenceCard } from "@/components/run/evidence-card";
+import { JudgeCard } from "@/components/run/judge-card";
+import { VerdictBar } from "@/components/run/verdict-bar";
 import { fetchJson, ProblemError } from "@/lib/api-client";
 import { restoreCompareState, type SavedComparison } from "@/lib/compare-state";
 import { getLiveRun, subscribeLiveRuns } from "@/lib/live-run";
 import { winsByModel, type MetricKey } from "@/lib/metrics";
 import { PRIORITY_WEIGHTS } from "@/lib/recommend";
-import { parseSortParams, sortModels, sortParam, type SortKey } from "@/lib/run-sort";
-import { timeAgo } from "@/lib/utils";
+import { parseSortParams, sortModels, type SortKey } from "@/lib/run-sort";
+import { cn, timeAgo } from "@/lib/utils";
+
+const TABS = ["answers", "decision", "evidence", "cost"] as const;
+type Tab = (typeof TABS)[number];
+const isTab = (v: string): v is Tab => (TABS as readonly string[]).includes(v);
+
+/** The ways to order the answer columns. Each sorts best first; ties fall back to the order picked. */
+const ORDERS: { key: SortKey; label: string; icon: typeof Trophy }[] = [
+  { key: "quality", label: "Judge score", icon: Trophy },
+  { key: "total", label: "Fastest", icon: Timer },
+  { key: "cost", label: "Cheapest", icon: Coins },
+  { key: "order", label: "Order picked", icon: ListOrdered },
+];
 
 /** What was sent, whether we read it from the live request or the saved run. */
 interface RunInfo {
@@ -100,21 +114,37 @@ export function RunView({ id }: { id: string }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showFullPrompt, setShowFullPrompt] = useState(false);
   const [copied, setCopied] = useState(false);
-  // The sort lives in the URL (?sort=cost,ttft,speed), so a shared link opens sorted the same way.
-  const [sortKeys, setSortKeys] = useState<SortKey[]>([]);
+  // The column order lives in the URL (?sort=cost) and the tab in the hash (#evidence), so a shared link opens the same view.
+  // Null until chosen: then the columns follow the judge's score when there is one.
+  const [order, setOrder] = useState<SortKey | null>(null);
+  const [tab, setTab] = useState<Tab>("answers");
+  const [seenDecision, setSeenDecision] = useState(false);
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    setSortKeys(parseSortParams(q.get("sort"), q.get("then")));
+    const first = q.get("sort") === "order" ? "order" : parseSortParams(q.get("sort"), q.get("then"))[0];
+    if (first) setOrder(first);
+    const fromHash = () => {
+      const h = window.location.hash.slice(1);
+      setTab(isTab(h) ? h : "answers");
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
   }, []);
-  function changeSort(keys: SortKey[]) {
-    setSortKeys(keys);
+  function changeOrder(key: SortKey) {
+    setOrder(key);
     const url = new URL(window.location.href);
-    url.searchParams.delete("sort");
     url.searchParams.delete("then");
-    const value = sortParam(keys);
-    if (value) url.searchParams.set("sort", value);
-    // Commas are fine in a query string, and ?sort=cost,ttft reads better than cost%2Cttft.
-    window.history.replaceState(null, "", url.toString().replaceAll("%2C", ","));
+    url.searchParams.set("sort", key);
+    window.history.replaceState(null, "", url.toString());
+  }
+  function changeTab(value: string) {
+    if (!isTab(value)) return;
+    setTab(value);
+    if (value === "decision") setSeenDecision(true);
+    const url = new URL(window.location.href);
+    url.hash = value === "answers" ? "" : value;
+    window.history.replaceState(null, "", url.toString());
   }
   async function copyLink() {
     await navigator.clipboard.writeText(window.location.href).catch(() => undefined);
@@ -153,7 +183,14 @@ export function RunView({ id }: { id: string }) {
   // Only once every model is done, so a model that finishes early is not shown as "best" too soon.
   const wins = finished ? winsByModel(metricRows) : new Map<string, Set<MetricKey>>();
   const answered = state.order.filter((m) => ["done", "failed"].includes(state.panels[m]?.status ?? "")).length;
-  const sortedModels = sortModels(sortKeys, { order: state.order, metrics, scores, priority });
+  const hasScores = scores.size > 0;
+  const chosen = order ?? (hasScores ? "quality" : "order");
+  const orderKey = chosen === "quality" && !hasScores ? "order" : chosen;
+  const sortedModels = sortModels(orderKey === "order" ? [] : [orderKey], { order: state.order, metrics, scores, priority });
+  const verdict = state.judge.verdict;
+  // A dot on the Decision tab once the verdict is in and you haven't looked yet.
+  const decisionIsNew = Boolean(verdict) && !seenDecision && tab !== "decision";
+  const outputs = Object.fromEntries(state.order.map((m) => [m, state.panels[m]?.output ?? ""]));
   const longPrompt = info.prompt.length > 280 || info.prompt.split("\n").length > 5;
 
   // Works for a run streaming in this tab and for one left running when the tab was closed.
@@ -162,9 +199,12 @@ export function RunView({ id }: { id: string }) {
     void fetchJson(`/api/compare/${encodeURIComponent(id)}/cancel`, { method: "POST" }).catch(() => undefined);
   }
 
+  // Picking your current pick again clears it.
   async function castVote(model: string) {
-    setVote(model);
-    await fetchJson(`/api/compare/${id}/vote`, { method: "PUT", body: JSON.stringify({ preferredModel: model }) }).catch(() => setVote(null));
+    const previous = vote;
+    const next = vote === model ? null : model;
+    setVote(next);
+    await fetchJson(`/api/compare/${id}/vote`, { method: "PUT", body: JSON.stringify({ preferredModel: next }) }).catch(() => setVote(previous));
   }
 
   async function rate(model: string, rating: Rating) {
@@ -229,55 +269,155 @@ export function RunView({ id }: { id: string }) {
         )}
       </Card>
 
-      {state.judge.verdict && (
-        <RecommendationCard
-          verdict={state.judge.verdict}
-          metrics={metrics}
-          label={label}
-          priority={priority}
-          onPriorityChange={setPriorityOverride}
-          customPriority={customPriority}
-          onCustomPriorityChange={setCustomPriority}
-        />
-      )}
+      <VerdictBar
+        verdict={verdict}
+        judging={running && state.judge.status !== "off"}
+        metrics={metrics}
+        priority={priority}
+        vote={vote}
+        label={label}
+        onOpenDecision={() => changeTab("decision")}
+      />
 
-      {finished && <MetricsTable rows={metricRows} catalog={catalog} label={label} colorOf={colorOf} scores={scores} />}
+      <Tabs value={tab} onValueChange={changeTab}>
+        <div className="pointer-events-none sticky top-0 z-20 py-2">
+          <TabsList className="pointer-events-auto w-full border shadow-sm sm:w-fit">
+            <TabsTrigger value="answers">
+              <MessagesSquare /> Answers
+            </TabsTrigger>
+            <TabsTrigger value="decision">
+              <Scale /> Decision
+              {decisionIsNew && <span className="bg-primary absolute top-1.5 right-1 size-1.5 rounded-full" aria-label="new" />}
+            </TabsTrigger>
+            <TabsTrigger value="evidence">
+              <ListChecks /> Evidence
+            </TabsTrigger>
+            <TabsTrigger value="cost">
+              <Gauge /> Cost<span className="hidden sm:inline"> and speed</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h2 className="text-lg font-semibold">Answers</h2>
+        <TabsContent value="answers" className="space-y-3">
           {state.order.length > 1 && (
-            <AnswerSort keys={sortKeys} onChange={changeSort} combinedAvailable={scores.size > 0} />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground text-sm">Order columns</span>
+              <div role="radiogroup" aria-label="Order columns" className="bg-muted inline-flex flex-wrap rounded-lg p-1">
+                {ORDERS.filter((o) => o.key !== "quality" || hasScores).map((o) => (
+                  <button
+                    key={o.key}
+                    type="button"
+                    role="radio"
+                    aria-checked={orderKey === o.key}
+                    onClick={() => changeOrder(o.key)}
+                    className={cn(
+                      "focus-visible:ring-ring/50 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm transition-colors outline-none focus-visible:ring-[3px] [&_svg]:size-3.5",
+                      orderKey === o.key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <o.icon /> {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {sortedModels.map((m) => (
-            <ModelPanel
-              key={m}
-              panel={state.panels[m]!}
-              label={label(m)}
-              rating={ratings[m] ?? null}
-              onRate={(r) => rate(m, r)}
-              score={scores.get(m)}
-              isWinner={state.judge.verdict?.winnerModel === m}
-              voted={vote === m}
-              canVote={finished && state.panels[m]?.status === "done"}
-              onVote={() => castVote(m)}
-              color={colorOf(m)}
-              wins={wins.get(m)}
-            />
-          ))}
-        </div>
-      </section>
+          {/* On phones the columns swipe one at a time; these chips jump to one. */}
+          {state.order.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1 md:hidden" aria-label="Jump to an answer">
+              {sortedModels.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className="bg-card flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs"
+                  onClick={() => document.getElementById(`answer-${m}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" })}
+                >
+                  <span className="inline-block size-2 rounded-full" style={{ background: colorOf(m) }} />
+                  {label(m)}
+                </button>
+              ))}
+            </div>
+          )}
+          <div
+            className={cn(
+              // contain:paint stops mobile Chrome from zooming the page out to fit the off-screen columns.
+              "flex snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-2 max-md:[contain:paint] md:snap-none",
+              "[&>article]:w-[88%] [&>article]:shrink-0 [&>article]:snap-start",
+              state.order.length <= 3
+                ? cn("md:grid md:overflow-visible md:[&>article]:w-auto", state.order.length === 2 ? "md:grid-cols-2" : state.order.length === 3 ? "md:grid-cols-3" : "md:grid-cols-1")
+                : "md:[&>article]:w-[24rem]",
+            )}
+          >
+            {sortedModels.map((m) => (
+              <AnswerColumn
+                key={m}
+                panel={state.panels[m]!}
+                label={label(m)}
+                color={colorOf(m)}
+                score={scores.get(m)}
+                isWinner={verdict?.winnerModel === m}
+                picked={vote === m}
+                canVote={finished && state.panels[m]?.status === "done"}
+                rating={ratings[m] ?? null}
+                onRate={(r) => rate(m, r)}
+                onPick={() => castVote(m)}
+                wins={wins.get(m) ?? new Set()}
+                pinHeader={state.order.length <= 3}
+              />
+            ))}
+          </div>
+        </TabsContent>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <SynthesisCard synthesis={state.synthesis} label={label} />
-        <JudgePanel judge={state.judge} label={label} outputs={state.panels} />
-      </div>
+        <TabsContent value="decision" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <JudgeCard judge={state.judge} label={label} />
+            {verdict ? (
+              <RecommendationCard
+                verdict={verdict}
+                metrics={metrics}
+                label={label}
+                priority={priority}
+                onPriorityChange={setPriorityOverride}
+                customPriority={customPriority}
+                onCustomPriorityChange={setCustomPriority}
+              />
+            ) : (
+              <Pending>The recommendation appears once the judge has scored the answers.</Pending>
+            )}
+          </div>
+          <SynthesisCard synthesis={state.synthesis} label={label} />
+        </TabsContent>
+
+        <TabsContent value="evidence">
+          {verdict ? (
+            <EvidenceCard verdict={verdict} outputs={outputs} label={label} colorOf={colorOf} />
+          ) : (
+            <Pending>{state.judge.status === "off" ? "This run was not judged." : "Scores appear once the judge has scored the answers."}</Pending>
+          )}
+        </TabsContent>
+
+        <TabsContent value="cost" className="space-y-4">
+          {finished && metricRows.length > 0 ? (
+            <>
+              <CostCard rows={metricRows} scores={scores} label={label} colorOf={colorOf} />
+              <SpeedCard rows={metricRows} scores={scores} catalog={catalog} label={label} colorOf={colorOf} />
+            </>
+          ) : (
+            <Pending>{finished ? "No answers succeeded, so there is nothing to measure." : "Timing and cost appear once every answer is in."}</Pending>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <RunHistory open={historyOpen} onOpenChange={setHistoryOpen} currentId={id} label={label} />
 
     </div>
+  );
+}
+
+function Pending({ children }: { children: React.ReactNode }) {
+  return (
+    <Card className="text-muted-foreground items-center justify-center px-5 py-10 text-center text-sm">
+      <p>{children}</p>
+    </Card>
   );
 }
 

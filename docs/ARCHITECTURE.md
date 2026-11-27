@@ -26,7 +26,7 @@
 ### How the PoC answers it
 
 1. **Interactive compare.** One prompt, any number of the available models (no cap), each with its own settings (temperature, top P, max tokens, reasoning level, system prompt override), streaming side by side with latency, tokens and cost.
-2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash is 95% as good as DeepSeek at 1/10th of the cost."*
+2. **Combined view, three ways.** (a) a **judge** scores the anonymised answers; (b) a **synthesizer** merges them into one answer that cites which model each part came from; (c) a **recommendation** turns judge quality plus cost and latency into "use X", weighted by the user's priority (quality, balanced, cost, speed), e.g. *"GLM-5.3 Flash scored 1 point below DeepSeek, at 1/10th of the cost."*
 3. **Human signal.** Thumbs up/down per answer and a "best answer" vote, stored for judge calibration and future tuning.
 4. **Run history.** Every comparison is saved and has its own page with the answers, the judge and the metrics.
 
@@ -139,7 +139,7 @@ Embedding-similarity consensus was considered and rejected: cheap, but agreement
 
 ### Recommendation: from scores to a decision
 
-`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer ("95% as good at 1/10th of the cost"). Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one; running the same models over many prompts is the batch-eval roadmap item.
+`apps/web/lib/recommend.ts` is a small pure function. Each answered model gets three 0..1 sub-scores: quality (judge overall / 10), cost (cheapest / this), speed (fastest / this). The user's priority picks the weights (quality 1/0/0, balanced 0.6/0.25/0.15, cost 0.4/0.6/0, speed 0.4/0/0.6) and the highest weighted sum wins. The sentence compares the pick to the highest-quality answer in judge points ("1 point below, at 1/10th of the cost"); a ratio like "65% as good" read like a benchmark result, so it was dropped. **Quality guard:** unless the priority weighs cost above quality, the pick may not score 2+ points below the best answer. Without it, a 6x price gap on a fraction of a cent outvoted an answer that broke the prompt's "JSON only" rule. The run page states the verdict's confidence too: "Clear" only when both judge orders agree and the lead is over 1 point. Unknown prices score as worst-case cost so we never recommend on a guess. The card says plainly that one prompt is a sample of one; running the same models over many prompts is the batch-eval roadmap item.
 
 ### Run metrics: what we measure, and how
 

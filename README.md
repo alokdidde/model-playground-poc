@@ -1,6 +1,6 @@
 # Model FOMO
 
-Send one prompt to several LLMs on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**: an independent judge scores the anonymised answers, a synthesizer merges them into one answer that cites each model, and a recommendation weighs quality against cost and latency ("X is 95% as good at 1/10th of the cost"). Every comparison is saved with its own page. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline. Batch evals over many prompts are on the [roadmap](docs/ROADMAP.md).
+Send one prompt to several LLMs on **DigitalOcean serverless inference**, each with its own settings, watch the answers stream in side by side, and get a **combined view**: an independent judge scores the anonymised answers, a synthesizer merges them into one answer that cites each model, and a recommendation weighs quality against cost and latency ("X scores 1 point below the best at 1/10th of the cost"). Every comparison is saved with its own page. Every model call shares one rate-limit budget per model, and **/ops/rate-limits** shows each wait, 429, cooldown and retry as a timeline. Batch evals over many prompts are on the [roadmap](docs/ROADMAP.md).
 
 **Live PoC:** https://model-fomo-qlrb3.ondigitalocean.app
 

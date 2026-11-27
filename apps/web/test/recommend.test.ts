@@ -17,7 +17,7 @@ describe("recommend", () => {
   it("cost priority trades a little quality for a lot of savings", () => {
     const r = recommend(cands, "cost")!;
     expect(r).toMatchObject({ pick: "small", best: "big" });
-    expect(describeRecommendation(r, (id) => id)).toBe("small is 90% as good as big at 1/10th of the cost and 4.0x faster.");
+    expect(describeRecommendation(r, (id) => id)).toBe("small scored 1 point below big, at 1/10th of the cost and 4.0x faster.");
   });
 
   it("never recommends on an unknown price", () => {
@@ -32,6 +32,26 @@ describe("priority weights", () => {
     expect(presetFor({ quality: 0.5, cost: 0.5, speed: 0 })).toBeNull();
     const cands = [c("big", 10, 0.01, 4000), c("small", 9, 0.001, 1000)];
     expect(rec(cands, { quality: 0, cost: 0, speed: 1 })?.pick).toBe("small");
+  });
+});
+
+describe("quality guard", () => {
+  // The live run that prompted this: a 6x cheaper answer that broke the prompt's "JSON only" rule.
+  const run = [c("glm", 10, 0.00007, 809), c("ministral", 6.5, 0.00001, 618)];
+
+  it("balanced and speed never recommend an answer 2+ points below the best", () => {
+    expect(recommend(run, "balanced")).toMatchObject({ pick: "glm", guarded: true });
+    expect(recommend(run, "speed")).toMatchObject({ pick: "glm", guarded: true });
+  });
+
+  it("a cost-first priority may still trade quality away, and says by how much", () => {
+    const r = recommend(run, "cost")!;
+    expect(r).toMatchObject({ pick: "ministral", scoreGap: 3.5, guarded: false });
+    expect(describeRecommendation(r, (id) => id)).toMatch(/^ministral scored 3.5 points below glm/);
+  });
+
+  it("answers within the guard can still win on cost", () => {
+    expect(recommend([c("big", 9, 0.01, 1000), c("small", 8, 0.001, 1000)], "balanced")).toMatchObject({ pick: "small", guarded: false });
   });
 });
 
