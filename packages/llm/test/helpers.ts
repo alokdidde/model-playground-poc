@@ -1,4 +1,4 @@
-import { MemoryLeaseStore, RateLimiter } from "@fomo/ratelimit";
+import { MemoryLeaseStore, RateLimiter, type RateEventSink } from "@fomo/ratelimit";
 import type { ModelInfo } from "@fomo/shared";
 import type { ChatProvider, ChatRequest, ChatResult, StreamChunk } from "../src/types";
 
@@ -32,15 +32,14 @@ export class ScriptedProvider implements ChatProvider {
   }
 }
 
-export function limiter() {
-  return new RateLimiter(new MemoryLeaseStore(), {
-    requestsPerWindow: 1_000,
-    tokensPerWindow: 10_000_000,
-    maxInFlight: 100,
-    windowMs: 60_000,
-    leaseTtlMs: 60_000,
-    batchShare: 0.3,
-  });
+export function limiter(events?: RateEventSink) {
+  return new RateLimiter(
+    new MemoryLeaseStore(),
+    { requestsPerWindow: 1_000, tokensPerWindow: 10_000_000, maxInFlight: 100, windowMs: 60_000, leaseTtlMs: 60_000, batchShare: 0.3 },
+    "model",
+    "default",
+    events,
+  );
 }
 
 export const request: ChatRequest = {

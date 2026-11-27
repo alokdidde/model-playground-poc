@@ -15,19 +15,41 @@ export function fullJitterDelay(
   return Math.floor(random() * ceiling);
 }
 
+/** How a retry delay was made, so the timeline can show the backoff and the jitter separately. */
+export interface RetryDelay {
+  delayMs: number;
+  /** The exponential ceiling, min(cap, base * 2^(attempt-1)); full jitter picks uniformly below it. */
+  ceilingMs: number;
+  /** The full-jitter draw from [0, ceiling). */
+  jitteredMs: number;
+  /** What the server asked for (Retry-After, or the reset of an exhausted counter), if anything. */
+  retryAfterMs?: number;
+  /** The random spread added on top of retryAfterMs, so waiting clients do not stampede at the reset. */
+  spreadMs?: number;
+}
+
 /**
  * When the server tells us how long to wait (Retry-After), wait at least that
  * long, plus a small random spread so waiting clients do not stampede.
  */
+export function retryDelay(
+  attempt: number,
+  retryAfterMs: number | undefined,
+  opts?: Parameters<typeof fullJitterDelay>[1],
+): RetryDelay {
+  const ceilingMs = Math.min(opts?.capMs ?? 20_000, (opts?.baseMs ?? 500) * 2 ** Math.max(0, attempt - 1));
+  const jitteredMs = fullJitterDelay(attempt, opts);
+  if (retryAfterMs === undefined) return { delayMs: jitteredMs, ceilingMs, jitteredMs };
+  const spreadMs = Math.floor((opts?.random ?? Math.random)() * Math.min(1_000, retryAfterMs * 0.2 + 100));
+  return { delayMs: Math.max(retryAfterMs + spreadMs, jitteredMs), ceilingMs, jitteredMs, retryAfterMs, spreadMs };
+}
+
 export function delayHonoringRetryAfter(
   attempt: number,
   retryAfterMs: number | undefined,
   opts?: Parameters<typeof fullJitterDelay>[1],
 ): number {
-  const jittered = fullJitterDelay(attempt, opts);
-  if (retryAfterMs === undefined) return jittered;
-  const spread = Math.floor((opts?.random ?? Math.random)() * Math.min(1_000, retryAfterMs * 0.2 + 100));
-  return Math.max(retryAfterMs + spread, jittered);
+  return retryDelay(attempt, retryAfterMs, opts).delayMs;
 }
 
 /** setTimeout as a promise that rejects early if the signal aborts. */

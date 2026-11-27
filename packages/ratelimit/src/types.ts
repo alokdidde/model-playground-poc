@@ -54,13 +54,25 @@ export interface Lease {
   id: string;
   bucket: string;
   tokensReserved: number;
+  /** Who holds it; filled in by RateLimiter so release events can be attributed. */
+  model?: string;
+  lane?: Lane;
+  tag?: string;
 }
 
 export type DenyReason = "requests" | "tokens" | "in_flight" | "cooldown";
 
+/** How full a bucket was when we asked, for observability. */
+export interface BucketSnapshot {
+  used: { requests: number; tokens: number; inFlight: number };
+  /** The effective limits at that moment (learned limit x AIMD factor x lane share). */
+  max: { requests: number; tokens: number; inFlight: number };
+  factor: number;
+}
+
 export type AcquireResult =
-  | { granted: true; lease: Lease }
-  | { granted: false; reason: DenyReason; retryAfterMs: number };
+  | { granted: true; lease: Lease; snapshot?: BucketSnapshot }
+  | { granted: false; reason: DenyReason; retryAfterMs: number; snapshot?: BucketSnapshot };
 
 /**
  * The storage contract. Each implementation must make `tryAcquire` atomic:
@@ -83,11 +95,15 @@ export interface LeaseStore {
    */
   release(lease: Lease, actualTokens: number, limits: Limits): Promise<void>;
   /**
-   * After a 429: block the bucket for everyone until `ms` from now, and halve
-   * its AIMD factor (once per cooldown, so a burst of parallel 429s counts once).
+   * Block the bucket for everyone until `ms` from now. With `decrease` (after a
+   * real 429) also halve its AIMD factor, once per cooldown, so a burst of
+   * parallel 429s counts once. A cooldown predicted from the headers ("0 left
+   * until :00") does not decrease: the limit is known, only the window is spent.
    */
-  coolDown(bucket: string, ms: number): Promise<void>;
+  coolDown(bucket: string, ms: number, decrease?: boolean): Promise<void>;
   /** Records limits learned from response headers for this bucket. */
   observe(bucket: string, observed: ObservedLimits): Promise<void>;
+  /** This process's view of the bucket (learned limits, AIMD factor), for observability. */
+  inspect(bucket: string): { learnedRequests?: number; learnedTokens?: number; factor: number };
   close?(): Promise<void>;
 }

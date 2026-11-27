@@ -131,6 +131,7 @@ export async function executeComparison(
           },
           {
             signal,
+            tag: comparison.id,
             onRetry: (r) => emit({ type: "model.retrying", model, ...r }),
             onWait: (w) => emit({ type: "model.waiting", model, ...w }),
           },
@@ -221,7 +222,7 @@ async function runJudgeStep(
     const verdict = await runJudge(
       gateway,
       { prompt: input.prompt, taskType: input.taskType, candidates: succeeded, judgeModel: judge.judgeModel, selfJudged: judge.selfJudged },
-      { signal },
+      { signal, tag: comparisonId },
     );
     await prisma.judgement.create({
       data: {
@@ -257,6 +258,7 @@ async function runSynthesisStep(
   try {
     const { output, metrics } = await gateway.stream(buildSynthesisRequest(prompt, succeeded, model), (text) => emit({ type: "synthesis.delta", text }), {
       signal,
+      tag: comparisonId,
     });
     await prisma.comparison.update({ where: { id: comparisonId }, data: { synthesis: output, synthesisModel: model } });
     emit({ type: "synthesis.completed", model, output, metrics });

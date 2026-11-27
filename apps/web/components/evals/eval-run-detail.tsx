@@ -90,6 +90,9 @@ export function EvalRunDetail({ id }: { id: string }) {
         <span className="text-muted-foreground text-xs whitespace-nowrap">
           {run.progress.completedCalls}/{run.progress.totalCalls} calls · {run.progress.failedCalls} failed
         </span>
+        <a href={`/ops/rate-limits?tag=${run.id}`} className="text-muted-foreground text-xs whitespace-nowrap underline">
+          Rate-limit timeline
+        </a>
       </div>
       {run.error && <p className="text-destructive text-sm">{run.error}</p>}
 

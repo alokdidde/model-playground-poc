@@ -252,3 +252,13 @@ export interface JudgeVerdict {
 }
 
 export type RunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED";
+
+// ---------------------------------------------------------------------------
+// Ops: rate-limit events (see packages/ratelimit/src/events.ts)
+// ---------------------------------------------------------------------------
+
+export const RateEventsQuerySchema = z.object({
+  minutes: z.coerce.number().int().min(1).max(7 * 24 * 60).default(30),
+  tag: z.string().max(100).optional(),
+  model: z.string().max(200).optional(),
+});

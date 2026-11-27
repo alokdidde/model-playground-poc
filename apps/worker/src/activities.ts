@@ -75,6 +75,7 @@ export async function callModel(runId: string, promptIndex: number, model: strin
     const { output, metrics } = await gateway.stream(request, () => {}, {
       // Batch lane: it only fills its share of each model's capacity, so a person running a compare never waits behind an eval.
       lane: "batch",
+      tag: runId,
       // Batch work is patient: wait longer for capacity and retry more than the interactive path.
       maxQueueWaitMs: 5 * 60_000,
       attemptTimeoutMs: 120_000,
@@ -131,7 +132,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
         judgeModel: ctx.judgeModel,
         selfJudged: ctx.models.includes(ctx.judgeModel),
       },
-      { lane: "batch", maxQueueWaitMs: 5 * 60_000, maxAttempts: 5 },
+      { lane: "batch", tag: runId, maxQueueWaitMs: 5 * 60_000, maxAttempts: 5 },
     );
     winnerModel = verdict.winnerModel;
     positionConsistent = verdict.positionConsistent ?? null;

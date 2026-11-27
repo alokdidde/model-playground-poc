@@ -229,3 +229,29 @@ model RateCooldown {
 
   @@map("rate_cooldown")
 }
+
+/// What the rate limiter and the gateway did, one row per event: leases granted
+/// and waited for, 429s, cooldowns, learned limits, AIMD factor changes, retries
+/// (with the backoff and jitter actually used) and attempt outcomes.
+/// Written in small batches by PostgresEventSink; /ops/rate-limits draws it as a timeline.
+model RateEvent {
+  id      BigInt   @id @default(autoincrement())
+  at      DateTime @default(now()) @db.Timestamptz(3)
+  /// web | worker | script: which process emitted it
+  source  String
+  /// See RateEventKind in packages/ratelimit/src/events.ts
+  kind    String
+  model   String?
+  lane    String?
+  /// Correlates events with a run: the comparison or eval run id
+  tag     String?
+  attempt Int?
+  /// The headline duration for this kind: time waited, retry delay, cooldown length, latency
+  ms      Int?
+  /// Everything else (bucket levels, effective limits, headers, jitter parts)
+  data    Json?
+
+  @@index([at])
+  @@index([tag, at])
+  @@map("rate_event")
+}

@@ -4,10 +4,12 @@ import { MemoryLeaseStore } from "./memory-store";
 import { PostgresLeaseStore } from "./postgres-store";
 import { RateLimiter, type BucketStrategy } from "./rate-limiter";
 import type { LeaseStore, Limits } from "./types";
+import { eventSinkFromEnv } from "./events";
 
 export * from "./types";
 export * from "./errors";
 export * from "./backoff";
+export * from "./events";
 export { RateLimiter, type BucketStrategy, type AcquireOptions } from "./rate-limiter";
 export { MemoryLeaseStore } from "./memory-store";
 export { PostgresLeaseStore } from "./postgres-store";
@@ -41,12 +43,12 @@ export function keyScope(key: string | undefined): string {
 }
 
 /**
- * Builds the limiter from env: LEASE_STORE=postgres (default) | memory (one process only).
+ * Builds the limiter from env (`source` names the process in rate events: web, worker, script): LEASE_STORE=postgres (default) | memory (one process only).
  * A Valkey store would be one more LeaseStore implementation (see docs/DECISIONS.md).
  */
-export function createRateLimiterFromEnv(prisma: PrismaClient): RateLimiter {
+export function createRateLimiterFromEnv(prisma: PrismaClient, source = "app"): RateLimiter {
   const store: LeaseStore =
     process.env.LEASE_STORE === "memory" ? new MemoryLeaseStore() : new PostgresLeaseStore(prisma);
   const strategy: BucketStrategy = process.env.RATE_LIMIT_BUCKET === "account" ? "account" : "model";
-  return new RateLimiter(store, limitsFromEnv(), strategy, keyScope(process.env.DO_MODEL_ACCESS_KEY));
+  return new RateLimiter(store, limitsFromEnv(), strategy, keyScope(process.env.DO_MODEL_ACCESS_KEY), eventSinkFromEnv(prisma, source));
 }

@@ -24,6 +24,7 @@ export class PostgresLeaseStore implements LeaseStore {
   constructor(private readonly prisma: PrismaClient) {}
 
   async tryAcquire(bucket: string, tokens: number, limits: Limits, lane: Lane = "interactive"): Promise<AcquireResult> {
+    const { factor } = this.state.get(bucket);
     const max = effectiveLimits(limits, this.state.get(bucket), lane);
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${bucket}))`;
@@ -55,14 +56,16 @@ export class PostgresLeaseStore implements LeaseStore {
         WHERE bucket = ${bucket}`;
 
       const untilOldestMs = Math.max(usage?.until_oldest_ms ?? limits.windowMs, 1);
-      if ((usage?.requests ?? 0) + 1 > max.requests) {
-        return { granted: false, reason: "requests", retryAfterMs: untilOldestMs } as const;
+      const used = { requests: usage?.requests ?? 0, tokens: usage?.tokens ?? 0, inFlight: usage?.in_flight ?? 0 };
+      const snapshot = { used, max, factor };
+      if (used.requests + 1 > max.requests) {
+        return { granted: false, reason: "requests", retryAfterMs: untilOldestMs, snapshot } as const;
       }
-      if ((usage?.tokens ?? 0) + tokens > max.tokens) {
-        return { granted: false, reason: "tokens", retryAfterMs: untilOldestMs } as const;
+      if (used.tokens + tokens > max.tokens) {
+        return { granted: false, reason: "tokens", retryAfterMs: untilOldestMs, snapshot } as const;
       }
-      if ((usage?.in_flight ?? 0) + 1 > max.inFlight) {
-        return { granted: false, reason: "in_flight", retryAfterMs: 250 } as const;
+      if (used.inFlight + 1 > max.inFlight) {
+        return { granted: false, reason: "in_flight", retryAfterMs: 250, snapshot } as const;
       }
 
       const id = randomUUID();
@@ -70,7 +73,7 @@ export class PostgresLeaseStore implements LeaseStore {
         INSERT INTO rate_lease (id, bucket, tokens_reserved, created_at, expires_at)
         VALUES (${id}, ${bucket}, ${tokens}, now(), now() + ${limits.leaseTtlMs}::int * interval '1 millisecond')`;
 
-      return { granted: true, lease: { id, bucket, tokensReserved: tokens } } as const;
+      return { granted: true, lease: { id, bucket, tokensReserved: tokens }, snapshot } as const;
     });
   }
 
@@ -83,23 +86,21 @@ export class PostgresLeaseStore implements LeaseStore {
     });
   }
 
-  async coolDown(bucket: string, ms: number): Promise<void> {
-    const wasActive = await this.prisma.$transaction(async (tx) => {
-      // Same lock as tryAcquire, so parallel 429s see each other's cooldown.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${bucket}))`;
-      const active = await tx.$queryRaw<{ active: boolean }[]>`
-        SELECT until > now() AS active FROM rate_cooldown WHERE bucket = ${bucket}`;
-      await tx.$executeRaw`
-        INSERT INTO rate_cooldown (bucket, until)
-        VALUES (${bucket}, now() + ${Math.ceil(ms)}::int * interval '1 millisecond')
-        ON CONFLICT (bucket) DO UPDATE SET until = GREATEST(rate_cooldown.until, EXCLUDED.until)`;
-      return active[0]?.active ?? false;
-    });
-    // Halve once per cooldown, so a burst of parallel 429s counts as one signal.
-    if (!wasActive) this.state.onRateLimited(bucket);
+  async coolDown(bucket: string, ms: number, decrease = true): Promise<void> {
+    // GREATEST: a shorter cooldown never cuts a longer one short.
+    await this.prisma.$executeRaw`
+      INSERT INTO rate_cooldown (bucket, until)
+      VALUES (${bucket}, now() + ${Math.ceil(ms)}::int * interval '1 millisecond')
+      ON CONFLICT (bucket) DO UPDATE SET until = GREATEST(rate_cooldown.until, EXCLUDED.until)`;
+    // Debounced in LocalBucketState, so a burst of parallel 429s counts as one signal.
+    if (decrease) this.state.onRateLimited(bucket);
   }
 
   async observe(bucket: string, observed: ObservedLimits): Promise<void> {
     this.state.observe(bucket, observed);
+  }
+
+  inspect(bucket: string) {
+    return this.state.get(bucket);
   }
 }

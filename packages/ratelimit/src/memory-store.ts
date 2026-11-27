@@ -26,6 +26,7 @@ export class MemoryLeaseStore implements LeaseStore {
   }
 
   async tryAcquire(bucket: string, tokens: number, limits: Limits, lane: Lane = "interactive"): Promise<AcquireResult> {
+    const { factor } = this.state.get(bucket);
     const max = effectiveLimits(limits, this.state.get(bucket), lane);
     const now = this.now();
 
@@ -42,21 +43,22 @@ export class MemoryLeaseStore implements LeaseStore {
     const untilOldestExpires = oldest ? oldest.createdAt + limits.windowMs - now : limits.windowMs;
     const usedTokens = entries.reduce((sum, e) => sum + e.tokens, 0);
     const inFlight = entries.filter((e) => !e.released && e.expiresAt > now);
+    const snapshot = { used: { requests: entries.length, tokens: usedTokens, inFlight: inFlight.length }, max, factor };
 
     if (entries.length + 1 > max.requests) {
-      return { granted: false, reason: "requests", retryAfterMs: untilOldestExpires };
+      return { granted: false, reason: "requests", retryAfterMs: untilOldestExpires, snapshot };
     }
     if (usedTokens + tokens > max.tokens) {
-      return { granted: false, reason: "tokens", retryAfterMs: untilOldestExpires };
+      return { granted: false, reason: "tokens", retryAfterMs: untilOldestExpires, snapshot };
     }
     if (inFlight.length + 1 > max.inFlight) {
       // We cannot know when a call finishes; poll again shortly.
-      return { granted: false, reason: "in_flight", retryAfterMs: 250 };
+      return { granted: false, reason: "in_flight", retryAfterMs: 250, snapshot };
     }
 
     const entry: Entry = { id: randomUUID(), createdAt: now, tokens, expiresAt: now + limits.leaseTtlMs, released: false };
     entries.push(entry);
-    return { granted: true, lease: { id: entry.id, bucket, tokensReserved: tokens } };
+    return { granted: true, lease: { id: entry.id, bucket, tokensReserved: tokens }, snapshot };
   }
 
   async release(lease: Lease, actualTokens: number): Promise<void> {
@@ -67,13 +69,17 @@ export class MemoryLeaseStore implements LeaseStore {
     entry.released = true;
   }
 
-  async coolDown(bucket: string, ms: number): Promise<void> {
-    if ((this.cooldowns.get(bucket) ?? 0) <= this.now()) this.state.onRateLimited(bucket);
+  async coolDown(bucket: string, ms: number, decrease = true): Promise<void> {
+    if (decrease) this.state.onRateLimited(bucket);
     const until = this.now() + ms;
     this.cooldowns.set(bucket, Math.max(this.cooldowns.get(bucket) ?? 0, until));
   }
 
   async observe(bucket: string, observed: ObservedLimits): Promise<void> {
     this.state.observe(bucket, observed);
+  }
+
+  inspect(bucket: string) {
+    return this.state.get(bucket);
   }
 }

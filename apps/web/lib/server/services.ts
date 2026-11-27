@@ -9,7 +9,7 @@ import { createGatewayFromEnv, type ModelGateway } from "@fomo/llm";
 const g = globalThis as unknown as { gateway?: ModelGateway; dbosClient?: Promise<DBOSClient> };
 
 export function getGateway(): ModelGateway {
-  g.gateway ??= createGatewayFromEnv(prisma);
+  g.gateway ??= createGatewayFromEnv(prisma, "web");
   return g.gateway;
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryLeaseStore } from "../src/memory-store";
 import { RateLimiter } from "../src/rate-limiter";
 import { RateLimitExceededError } from "../src/errors";
+import { MemoryEventSink } from "../src/events";
 
 const limits = { requestsPerWindow: 100, tokensPerWindow: 1_000, maxInFlight: 1, windowMs: 60_000, leaseTtlMs: 60_000, batchShare: 0.3 };
 
@@ -40,5 +41,36 @@ describe("RateLimiter", () => {
     await expect(limiter.acquire("m", 10, { maxWaitMs: 50 })).rejects.toMatchObject({ reason: "cooldown" });
     // Other models have their own counters.
     await expect(limiter.acquire("other", 10, { maxWaitMs: 50 })).resolves.toBeDefined();
+  });
+});
+
+describe("RateLimiter and provider headers", () => {
+  it("cools down on a spent counter without halving the AIMD factor (the limit is known)", async () => {
+    const events = new MemoryEventSink();
+    const limiter = new RateLimiter(new MemoryLeaseStore(), { ...limits, maxInFlight: 5 }, "model", "default", events);
+    await limiter.observe("m", { requestsPerWindow: 120, remainingRequests: 0, resetRequestsMs: 30_000 });
+    await expect(limiter.acquire("m", 10, { maxWaitMs: 50 })).rejects.toMatchObject({ reason: "cooldown" });
+    expect(limiter.store.inspect(limiter.bucketFor("m")).factor).toBe(1);
+    expect(events.ofKind("cooldown")[0]).toMatchObject({ ms: 30_000, data: { decrease: false } });
+    expect(events.ofKind("factor_changed")).toHaveLength(0);
+  });
+
+  it("does not block while a few requests are left (DO refills gradually)", async () => {
+    const limiter = new RateLimiter(new MemoryLeaseStore(), { ...limits, maxInFlight: 5 });
+    await limiter.observe("m", { requestsPerWindow: 120, remainingRequests: 2, resetRequestsMs: 59_000 });
+    await expect(limiter.acquire("m", 10, { maxWaitMs: 50 })).resolves.toBeDefined();
+  });
+
+  it("reports waits, grants with bucket levels, and AIMD changes as events", async () => {
+    const events = new MemoryEventSink();
+    const limiter = new RateLimiter(new MemoryLeaseStore(), limits, "model", "default", events);
+    const first = await limiter.acquire("m", 10, { maxWaitMs: 1_000, tag: "run1" });
+    setTimeout(() => void limiter.release(first, 7), 50);
+    await limiter.acquire("m", 10, { maxWaitMs: 5_000, tag: "run1" });
+    expect(events.ofKind("lease_wait")[0]).toMatchObject({ model: "m", tag: "run1", data: { reason: "in_flight" } });
+    expect(events.ofKind("lease_granted")[1]!.data).toMatchObject({ used: { inFlight: 0 }, max: { inFlight: 1 } });
+    expect(events.ofKind("lease_released")[0]!.data).toEqual({ tokensReserved: 10, tokensActual: 7 });
+    await limiter.coolDown("m", 10);
+    expect(events.ofKind("factor_changed")[0]!.data).toMatchObject({ from: 1, to: 0.5, cause: "429" });
   });
 });

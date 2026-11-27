@@ -14,6 +14,8 @@ import type { Lane, Limits, ObservedLimits } from "./types";
 export const LEARNED_SAFETY = 0.9;
 export const AIMD_MIN = 0.1;
 export const AIMD_STEP = 0.05;
+/** 429s within this long of a decrease count as the same signal (a burst of parallel 429s halves once). */
+export const DECREASE_DEBOUNCE_MS = 5_000;
 /** Learned limits are forgotten after this long without a fresh header. */
 export const LEARNED_TTL_MS = 60 * 60_000;
 
@@ -43,8 +45,10 @@ export function effectiveLimits(limits: Limits, state: BucketState, lane: Lane):
   };
 }
 
-export const decreased = (factor: number) => Math.max(AIMD_MIN, factor / 2);
-export const increased = (factor: number) => Math.min(1, factor + AIMD_STEP);
+// Rounded to 2 decimals so repeated steps stay exact (0.5, not 0.49999999999999994).
+const round2 = (x: number) => Math.round(x * 100) / 100;
+export const decreased = (factor: number) => Math.max(AIMD_MIN, round2(factor / 2));
+export const increased = (factor: number) => Math.min(1, round2(factor + AIMD_STEP));
 
 /**
  * Per-process bucket state (learned limits, AIMD factor). The leases and
@@ -52,7 +56,7 @@ export const increased = (factor: number) => Math.min(1, factor + AIMD_STEP);
  * limits on its own, which is good enough at PoC scale (2 processes).
  */
 export class LocalBucketState {
-  private states = new Map<string, BucketState & { learnedAt?: number }>();
+  private states = new Map<string, BucketState & { learnedAt?: number; decreasedAt?: number }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -65,7 +69,7 @@ export class LocalBucketState {
     return s;
   }
 
-  private update(bucket: string, patch: Partial<BucketState & { learnedAt: number }>) {
+  private update(bucket: string, patch: Partial<BucketState & { learnedAt: number; decreasedAt: number }>) {
     this.states.set(bucket, { factor: 1, ...this.states.get(bucket), ...patch });
   }
 
@@ -84,7 +88,9 @@ export class LocalBucketState {
   }
 
   onRateLimited(bucket: string) {
-    this.update(bucket, { factor: decreased(this.states.get(bucket)?.factor ?? 1) });
+    const s = this.states.get(bucket);
+    if (s?.decreasedAt !== undefined && this.now() - s.decreasedAt < DECREASE_DEBOUNCE_MS) return;
+    this.update(bucket, { factor: decreased(s?.factor ?? 1), decreasedAt: this.now() });
   }
 }
 

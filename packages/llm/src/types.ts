@@ -21,12 +21,21 @@ export interface Usage {
   outputTokens: number;
 }
 
+/** Provider facts about one HTTP response, recorded in rate events. */
+export interface ResponseMeta {
+  /** The provider's request id (x-request-id), to quote to their support. */
+  requestId?: string;
+  /** DO's do-upstream-service-time: ms the model backend took, without network or gateway time. */
+  upstreamMs?: number;
+}
+
 export interface ChatResult {
   text: string;
   /** Undefined when the provider did not report usage. */
   usage?: Usage;
   /** Parsed x-ratelimit-* headers, when the provider sends them. */
   rateLimits?: ObservedLimits;
+  meta?: ResponseMeta;
 }
 
 export type StreamChunk =
@@ -37,7 +46,9 @@ export type StreamChunk =
   /** Why generation stopped, e.g. "stop" or "length" (ran out of max tokens). */
   | { type: "finish"; reason: string }
   /** The provider's rate-limit headers for this call (sent once, before any text). */
-  | { type: "limits"; limits: ObservedLimits };
+  | { type: "limits"; limits: ObservedLimits }
+  /** Request id and upstream timing from the response headers (sent once, before any text). */
+  | { type: "meta"; meta: ResponseMeta };
 
 /**
  * The only thing the rest of the code knows about a model provider.
