@@ -23,7 +23,7 @@ const EXAMPLES = [
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-/** Builds the Compare page URL prefilled with the advisor's picks and settings. */
+/** Builds the Compare page URL prefilled with the suggested models and settings. */
 export function compareUrl(result: AdvisorResult, models: string[]): string {
   const p = result.intent.priority;
   const params = new URLSearchParams({
@@ -32,14 +32,14 @@ export function compareUrl(result: AdvisorResult, models: string[]): string {
     task: result.intent.taskType,
     priority: [p.quality, p.cost, p.speed].join(","),
   });
-  return `/?${params.toString()}`;
+  return `/compare?${params.toString()}`;
 }
 
 /**
- * "Ask FOMO": describe a use case in plain words; get models ranked from our
- * measured data, with a short explanation, and one click to test them.
+ * "Help me choose": describe a use case in plain words; get models ranked from
+ * our measured data, with a short explanation, and one click to test them.
  */
-export function AdvisorView() {
+export function HelpMeChoose() {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -68,7 +68,7 @@ export function AdvisorView() {
     if (!result || top.length === 0) return;
     setStarting(true);
     const body: CreateEvalRunInput = {
-      name: `Ask FOMO: ${result.intent.summary.slice(0, 80)}`,
+      name: `Help me choose: ${result.intent.summary.slice(0, 80)}`,
       models: top,
       prompts: result.intent.samplePrompts.map((prompt) => ({ prompt })),
       taskType: result.intent.taskType,
@@ -86,9 +86,9 @@ export function AdvisorView() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Ask FOMO</h1>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Help me choose a model</h1>
         <p className="text-muted-foreground mt-1">
-          Describe what you&apos;re building. We rank models using the scores, speed and cost measured in this app&apos;s compares and evals, not a
+          Describe what you&apos;re building in plain words. We work out the task and what matters to you, then rank models using the scores, speed and cost measured in this app&apos;s compares and evals, not a
           model&apos;s opinion.
         </p>
       </div>
@@ -158,12 +158,12 @@ export function AdvisorView() {
                     <TableRow>
                       <TableHead>#</TableHead>
                       <TableHead>Model</TableHead>
-                      <TableHead title="Weighted by your priorities (0 to 1)">Fit</TableHead>
+                      <TableHead title="Weighted by your priorities, 0 to 1">Fit score</TableHead>
                       <TableHead title="Mean judge score, and how many answers it is based on">Quality</TableHead>
-                      <TableHead>TTFT p50</TableHead>
-                      <TableHead>Avg latency</TableHead>
+                      <TableHead title="Median time until the answer starts">First token</TableHead>
+                      <TableHead>Total time</TableHead>
                       <TableHead>Speed</TableHead>
-                      <TableHead>Avg cost / call</TableHead>
+                      <TableHead>Cost per call</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

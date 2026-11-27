@@ -172,9 +172,9 @@ A batch run's page shows, per model: mean judge score and the three criteria (ac
 
 The automatic checks (`packages/llm/src/checks.ts`) are deterministic and run next to the judge, because a judge is an opinion: **matches reference** (short reference answers must appear in the output; long ones need half their key words) and **valid JSON** (for extraction tasks or prompts that ask for JSON; prose around the JSON fails, since a caller would have to strip it). When the checks and the judge disagree, that's a signal to read the answers. Percentiles use nearest rank, which is simple to explain and honest for the small samples a PoC run has.
 
-### Ask FOMO: a use case in plain words
+### Help me choose: a use case in plain words
 
-`/advisor` takes a description like "a support chatbot, high volume, replies start in under 2 seconds" and answers "which model should I try?". The design rule: **the model reads and writes language; our code makes the decision.**
+`/choose` takes a description like "a support chatbot, high volume, replies start in under 2 seconds" and answers "which model should I try?". The design rule: **the model reads and writes language; our code makes the decision.**
 
 1. **Parse (LLM).** The house model (the judge model, `openai-gpt-oss-120b`) turns the text into strict JSON: task type, quality/cost/speed weights (normalised to shares), hard limits only if stated (cost per call, time until the answer starts), three realistic sample prompts, and a one-line summary. zod validates it; one re-ask on bad JSON, as with the judge. The prompt forbids naming models.
 2. **Rank (code).** `rank()` in `apps/web/lib/advisor-rank.ts` reads the leaderboard filtered to that task type (falling back to all runs if fewer than two models have judged data, and saying so), scores each model with the same weighted sum as the compare recommendation (`rankCandidates`), and moves models that break a stated limit to the bottom, labelled. Models never judged are listed as "not ranked yet" rather than guessed.

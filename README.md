@@ -53,14 +53,15 @@ CI (`.github/workflows/ci.yml`) runs typecheck, all tests (with Postgres and Val
 | --- | --- | --- |
 | `GET` | `/api/models` | Live model list from DO, decorated with prices, badges, capabilities and plan availability. |
 | `POST` | `/api/compare` | Body: prompt, models, `modelSettings` (per-model temperature/topP/maxTokens/reasoningEffort/systemPrompt), `judge`, `synthesize`. Response: `text/event-stream`. Optional `Idempotency-Key`. |
-| `GET` | `/api/compare/:id` | Stored comparison, results, judgement, vote. |
+| `GET` | `/api/compare` | Run history, newest first: `?limit=20&before=<id>` (cursor pagination). |
+| `GET` | `/api/compare/:id` | Stored comparison, results, judgement, vote. The Compare page reopens one at `/compare?run=<id>`. |
 | `PUT` | `/api/compare/:id/vote` | "Best answer" vote (idempotent). |
 | `PUT` | `/api/compare/:id/rating` | Thumbs up/down on one model's answer: `{model, rating: "up" \| "down" \| null}`. |
 | `POST` | `/api/evals` | Create a batch eval run (optionally with `taskType`, `priority`, `modelSettings`, `sourceComparisonId`, as "Validate on my prompts" does). `202 Accepted` + `Location`. `Idempotency-Key` supported. |
 | `GET` | `/api/evals` / `/api/evals/:id` | List runs (cursor pagination) / run progress and results. |
 | `POST` | `/api/evals/:id/cancel` | Cancels the run and its child workflows. |
 | `GET` | `/api/evals/:id/export?format=csv\|json` | Every cell as CSV, or the per-model summary plus cells as JSON. |
-| `POST` | `/api/advisor` | "Ask FOMO": `{ query }` in plain words; returns the parsed intent, a ranking from measured data, and a short explanation. |
+| `POST` | `/api/advisor` | "Help me choose": `{ query }` in plain words; returns the parsed intent, a ranking from measured data, and a short explanation. |
 | `GET` | `/api/leaderboard` | Aggregated judge scores, win rates, human votes, latency, cost, errors. `?taskType=coding` filters by task type. |
 | `GET` | `/api/health` | Health check used by App Platform. |
 

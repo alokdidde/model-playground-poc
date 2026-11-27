@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { LIMITS, TASK_TYPE_IDS, TASK_TYPES, type ModelInfo, type ModelSettings, type PriorityWeights, type TaskType } from "@fomo/shared";
+import { History } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useModels } from "@/components/model-picker";
 import { fetchJson, ProblemError, streamCompare } from "@/lib/api-client";
-import { compareReducer, initialCompareState } from "@/lib/compare-state";
-import { newSelection, toRequestSettings, type SelectedModel } from "@/lib/model-settings";
+import { compareReducer, initialCompareState, restoreCompareState, type SavedComparison } from "@/lib/compare-state";
+import { winsByModel, type MetricKey } from "@/lib/metrics";
+import { DEFAULT_SETTINGS, newSelection, toRequestSettings, type SelectedModel } from "@/lib/model-settings";
 import { PRIORITY_WEIGHTS, TASK_DEFAULT_PRIORITY } from "@/lib/recommend";
 import { JudgePanel } from "./judge-panel";
 import { MetricsTable } from "./metrics-table";
@@ -17,6 +20,7 @@ import { PromptCard } from "./prompt-card";
 import { RecommendationCard } from "./recommendation-card";
 import { SelectedModels } from "./selected-models";
 import { SynthesisCard } from "./synthesis-card";
+import { RunHistory } from "./run-history";
 import { ValidateDrawer } from "./validate-drawer";
 
 /** What the last run actually sent, so "Validate on my prompts" reuses it even if the form changed since. */
@@ -45,9 +49,14 @@ export function CompareView() {
   const [priority, setPriority] = useState<PriorityWeights>(PRIORITY_WEIGHTS.balanced);
   const [customPriority, setCustomPriority] = useState(false);
 
-  // Prefill from a link, e.g. "Compare the top 3" on Ask FOMO: ?models=a,b&prompt=...&task=coding&priority=q,c,s
+  // ?run=<id> reopens a saved run (history, refresh, shared link); ?history=1 opens the list of past runs.
+  // Otherwise the form can be prefilled from a link, e.g. "Compare the top 3" on Help me choose:
+  // ?models=a,b&prompt=...&task=coding&priority=q,c,s
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
+    const runId = q.get("run");
+    if (runId) return void openRun(runId);
+    if (q.get("history")) setHistoryOpen(true);
     const models = q.get("models")?.split(",").filter(Boolean).slice(0, LIMITS.maxModelsPerCompare);
     if (models?.length) setSelected(models.map(newSelection));
     const p = q.get("prompt");
@@ -59,6 +68,7 @@ export function CompareView() {
       setPriority({ quality: quality!, cost: cost!, speed: speed! });
       setCustomPriority(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
   }, []);
 
   // Picking a task type suggests its default priority, unless the user has set custom weights.
@@ -71,6 +81,7 @@ export function CompareView() {
   const [ratings, setRatings] = useState<Record<string, Rating>>({});
   const [lastRun, setLastRun] = useState<RunSnapshot | null>(null);
   const [validateOpen, setValidateOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -108,7 +119,11 @@ export function CompareView() {
           priority,
           modelSettings,
         },
-        (event) => dispatch({ type: "event", event }),
+        (event) => {
+          // Put the run in the URL, so a refresh or a shared link reopens it.
+          if (event.type === "comparison.started") window.history.replaceState(null, "", `/compare?run=${encodeURIComponent(event.comparisonId)}`);
+          dispatch({ type: "event", event });
+        },
         controller.signal,
       );
     } catch (error) {
@@ -116,6 +131,42 @@ export function CompareView() {
       dispatch({
         type: "error",
         problem: error instanceof ProblemError ? error.problem : { type: "about:blank", title: "Network error", status: 0, detail: String(error) },
+      });
+    }
+  }
+
+  /** Reopens a saved run: its results, and the form as it was sent, so it can be tweaked and re-run. */
+  async function openRun(id: string) {
+    abortRef.current?.abort();
+    setHistoryOpen(false);
+    try {
+      const c = await fetchJson<SavedComparison>(`/api/compare/${encodeURIComponent(id)}`);
+      const settings = new Map(c.results.map((r) => [r.model, r.settings ?? {}]));
+      const restoredSelection = c.models.map((m) => ({ id: m, settings: { ...DEFAULT_SETTINGS, ...settings.get(m) } }) as SelectedModel);
+      const task = (TASK_TYPE_IDS as readonly string[]).includes(c.taskType) ? (c.taskType as TaskType) : "general";
+      setPrompt(c.prompt);
+      setSystemPrompt(c.systemPrompt ?? "");
+      setSelected(restoredSelection);
+      setTaskType(task);
+      if (c.priority) {
+        setPriority(c.priority);
+        setCustomPriority(true);
+      }
+      setVote(c.vote?.preferredModel ?? null);
+      setRatings(Object.fromEntries(c.results.filter((r) => r.rating).map((r) => [r.model, r.rating! > 0 ? "up" : "down"])));
+      setLastRun({
+        prompt: c.prompt,
+        models: c.models,
+        taskType: task,
+        modelSettings: Object.fromEntries(c.results.map((r) => [r.model, (r.settings ?? {}) as ModelSettings])),
+      });
+      dispatch({ type: "restore", state: restoreCompareState(c) });
+      window.history.replaceState(null, "", `/compare?run=${encodeURIComponent(c.id)}`);
+      requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (error) {
+      dispatch({
+        type: "error",
+        problem: error instanceof ProblemError ? error.problem : { type: "about:blank", title: "Could not open that run", status: 0, detail: String(error) },
       });
     }
   }
@@ -140,6 +191,9 @@ export function CompareView() {
   const colorOf = (id: string) => `var(--series-${(state.order.indexOf(id) % 6) + 1})`;
   const editing = selected.find((m) => m.id === settingsFor) ?? null;
   const metrics = Object.fromEntries(state.order.map((id) => [id, state.panels[id]?.metrics]));
+  const metricRows = state.order.flatMap((model) => (metrics[model] ? [{ model, metrics: metrics[model]! }] : []));
+  // Only once every model is done, so a model that finishes early is not shown as "best" too soon.
+  const wins = finished ? winsByModel(metricRows) : new Map<string, Set<MetricKey>>();
   const costs = Object.values(metrics).map((m) => m?.costUsd);
   const costPerPrompt = costs.length && costs.every((c) => typeof c === "number") ? (costs as number[]).reduce((a, b) => a + b, 0) : null;
 
@@ -149,6 +203,9 @@ export function CompareView() {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Compare AI models</h1>
           {mockMode && <Badge variant="warning">mock mode: canned responses, no tokens spent</Badge>}
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => setHistoryOpen(true)}>
+            <History /> Past runs
+          </Button>
         </div>
         <p className="text-muted-foreground mt-1">Run the same prompt across several models, each with its own settings, and see which answer is worth using.</p>
       </div>
@@ -216,7 +273,7 @@ export function CompareView() {
             />
           )}
           <MetricsTable
-            rows={state.order.flatMap((model) => (metrics[model] ? [{ model, metrics: metrics[model]! }] : []))}
+            rows={metricRows}
             catalog={catalog}
             label={label}
             colorOf={colorOf}
@@ -239,11 +296,15 @@ export function CompareView() {
                 voted={vote === model}
                 canVote={finished && Boolean(state.comparisonId) && state.panels[model]?.status === "done"}
                 onVote={() => castVote(model)}
+                color={colorOf(model)}
+                wins={wins.get(model)}
               />
             ))}
           </section>
         </div>
       )}
+
+      <RunHistory open={historyOpen} onOpenChange={setHistoryOpen} currentId={state.comparisonId} label={label} onPick={openRun} />
 
       {lastRun && (
         <ValidateDrawer

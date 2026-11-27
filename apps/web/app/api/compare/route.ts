@@ -1,6 +1,6 @@
-import { CompareRequestSchema, type CompareEvent } from "@fomo/shared";
+import { CompareListQuerySchema, CompareRequestSchema, type CompareEvent } from "@fomo/shared";
 import { apiRoute, readIdempotencyKey } from "@/lib/server/api";
-import { createComparison, executeComparison } from "@/lib/server/compare-service";
+import { createComparison, executeComparison, listComparisons } from "@/lib/server/compare-service";
 import { sseResponse } from "@/lib/server/sse";
 
 export const runtime = "nodejs";
@@ -20,4 +20,10 @@ export const POST = apiRoute({
     const comparison = await createComparison(body, requestId, readIdempotencyKey(req));
     return sseResponse<CompareEvent>(req.signal, (emit, signal) => executeComparison(comparison, body, emit, signal));
   },
+});
+
+/** GET /api/compare?limit=20&before=<id>  ->  run history, newest first. */
+export const GET = apiRoute({
+  query: CompareListQuerySchema,
+  handler: async ({ query }) => listComparisons(query.limit, query.before),
 });

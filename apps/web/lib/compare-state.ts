@@ -32,7 +32,8 @@ export const initialCompareState: CompareState = {
 export type CompareAction =
   | { type: "start"; models: string[]; judge: boolean; synthesize: boolean }
   | { type: "event"; event: CompareEvent }
-  | { type: "error"; problem: Problem };
+  | { type: "error"; problem: Problem }
+  | { type: "restore"; state: CompareState };
 
 /**
  * Pure reducer from server events to UI state. Keeping it pure makes the
@@ -48,6 +49,7 @@ export function compareReducer(state: CompareState, action: CompareAction): Comp
       synthesis: { status: action.synthesize ? "pending" : "off", output: "" },
     };
   }
+  if (action.type === "restore") return action.state;
   if (action.type === "error") return { ...state, status: "FAILED", error: action.problem };
 
   const e = action.event;
@@ -91,4 +93,95 @@ export function compareReducer(state: CompareState, action: CompareAction): Comp
         synthesis: state.synthesis.status === "pending" ? { ...state.synthesis, status: "off" } : state.synthesis,
       };
   }
+}
+
+/** A saved comparison as GET /api/compare/:id returns it (dates as strings). */
+export interface SavedComparison {
+  id: string;
+  prompt: string;
+  systemPrompt: string | null;
+  models: string[];
+  taskType: string;
+  priority: { quality: number; cost: number; speed: number } | null;
+  status: RunStatus;
+  createdAt: string;
+  synthesis: string | null;
+  synthesisModel: string | null;
+  results: {
+    model: string;
+    status: "SUCCEEDED" | "FAILED";
+    output: string;
+    settings: Record<string, unknown> | null;
+    rating: number | null;
+    problem: Problem | null;
+    latencyMs: number;
+    ttftMs: number | null;
+    outputTokensPerSec: number | null;
+    reasoned: boolean | null;
+    inputTokens: number;
+    outputTokens: number;
+    tokensEstimated: boolean;
+    costUsd: number | null;
+    attempts: number;
+  }[];
+  judgement: {
+    judgeModel: string;
+    selfJudged: boolean;
+    winnerModel: string | null;
+    rationale: string;
+    scores: JudgeVerdict["scores"];
+    latencyMs: number;
+    costUsd: number | null;
+  } | null;
+  vote: { preferredModel: string | null } | null;
+}
+
+/**
+ * Rebuilds the results view from a saved comparison, so an old run looks the
+ * same as when it streamed. Models that never finished (the tab was closed
+ * mid-run) show as failed with no answer.
+ */
+export function restoreCompareState(c: SavedComparison): CompareState {
+  const byModel = new Map(c.results.map((r) => [r.model, r]));
+  const panels = Object.fromEntries(
+    c.models.map((model): [string, ModelPanel] => {
+      const r = byModel.get(model);
+      if (!r) return [model, { model, status: "failed", output: "", problem: { type: "about:blank", title: "No result saved", status: 0 } }];
+      const metrics: CallMetrics = {
+        latencyMs: r.latencyMs,
+        ttftMs: r.ttftMs ?? undefined,
+        outputTokensPerSec: r.outputTokensPerSec ?? undefined,
+        reasoned: r.reasoned ?? undefined,
+        inputTokens: r.inputTokens,
+        outputTokens: r.outputTokens,
+        tokensEstimated: r.tokensEstimated,
+        costUsd: r.costUsd,
+        attempts: r.attempts,
+      };
+      return [model, r.status === "SUCCEEDED" ? { model, status: "done", output: r.output, metrics } : { model, status: "failed", output: r.output, metrics, problem: r.problem ?? undefined }];
+    }),
+  );
+  const j = c.judgement;
+  return {
+    comparisonId: c.id,
+    status: c.status,
+    order: c.models,
+    panels,
+    judge: j
+      ? {
+          status: "done",
+          model: j.judgeModel,
+          verdict: {
+            judgeModel: j.judgeModel,
+            selfJudged: j.selfJudged,
+            winnerModel: j.winnerModel,
+            rationale: j.rationale,
+            scores: j.scores,
+            // Only latency and cost are stored for the judge call.
+            metrics: { latencyMs: j.latencyMs, inputTokens: 0, outputTokens: 0, tokensEstimated: true, costUsd: j.costUsd, attempts: 1 },
+          },
+        }
+      : { status: "off" },
+    synthesis: c.synthesis ? { status: "done", model: c.synthesisModel ?? undefined, output: c.synthesis } : { status: "off", output: "" },
+  };
 }

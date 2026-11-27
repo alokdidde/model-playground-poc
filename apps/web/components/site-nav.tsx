@@ -6,15 +6,15 @@ import { Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "Compare" },
+  { href: "/compare", label: "Compare" },
+  { href: "/choose", label: "Help me choose" },
   { href: "/evals", label: "Batch evals" },
   { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/advisor", label: "Ask FOMO" },
 ];
 
 export function SiteNav() {
   const pathname = usePathname();
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isActive = (href: string) => pathname.startsWith(href);
   return (
     <header className="bg-background border-b">
       <nav className="mx-auto flex max-w-[1600px] items-center gap-2 px-4 py-2.5 sm:gap-6">

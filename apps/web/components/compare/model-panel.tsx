@@ -1,4 +1,4 @@
-import { AlertTriangle, Crown, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
+import { AlertTriangle, Crown, Loader2, ThumbsDown, ThumbsUp, Trophy } from "lucide-react";
 import type { JudgeScore } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import type { ModelPanel as Panel } from "@/lib/compare-state";
 import { cn, formatMs, formatUsd } from "@/lib/utils";
 import { Markdown } from "@/components/markdown";
-import { formatTps } from "@/lib/metrics";
+import { formatTps, WIN_LABELS, type MetricKey } from "@/lib/metrics";
 
 const STATUS_BADGE: Record<Panel["status"], { label: string; variant: "secondary" | "outline" | "success" | "destructive" | "warning" }> = {
   pending: { label: "Queued", variant: "outline" },
@@ -29,6 +29,8 @@ export function ModelPanel({
   voted,
   canVote,
   onVote,
+  color,
+  wins = new Set(),
 }: {
   panel: Panel;
   label: string;
@@ -39,6 +41,10 @@ export function ModelPanel({
   voted: boolean;
   canVote: boolean;
   onVote: () => void;
+  /** This model's color in the "How the models did" charts. */
+  color?: string;
+  /** Metrics this model was best on in this run. */
+  wins?: Set<MetricKey>;
 }) {
   const badge = STATUS_BADGE[panel.status];
   const busy = panel.status === "pending" || panel.status === "streaming" || panel.status === "retrying" || panel.status === "waiting";
@@ -47,15 +53,36 @@ export function ModelPanel({
     <Card className={cn("min-h-64", isWinner && "border-primary ring-primary/30 ring-2")}>
       <CardHeader>
         <div className="flex items-center gap-2">
+          {color && <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: color }} />}
           <CardTitle className="truncate text-sm" title={panel.model}>
             {label}
           </CardTitle>
-          {isWinner && <Crown className="text-primary size-4" aria-label="Judge's pick" />}
-          <Badge variant={badge.variant} className="ml-auto">
-            {busy && <Loader2 className="animate-spin" />}
-            {badge.label}
-          </Badge>
+          {score ? (
+            <span
+              className={cn("ml-auto shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums", isWinner ? "bg-primary text-primary-foreground" : "bg-muted")}
+              title="The judge's overall score"
+            >
+              {isWinner && <Crown className="mr-1 inline size-3.5 align-[-2px]" aria-label="Judge's pick" />}
+              {score.overall}/10
+            </span>
+          ) : (
+            <span className="ml-auto" />
+          )}
+          {panel.status !== "done" && (
+            <Badge variant={badge.variant}>
+              {busy && <Loader2 className="animate-spin" />}
+              {badge.label}
+            </Badge>
+          )}
         </div>
+        {(isWinner || wins.size > 0) && (
+          <div className="flex flex-wrap gap-1">
+            {isWinner && <WinChip>Judge&apos;s pick</WinChip>}
+            {[...wins].map((k) => (
+              <WinChip key={k}>{WIN_LABELS[k]}</WinChip>
+            ))}
+          </div>
+        )}
         {panel.note && <p className="text-xs text-amber-600">{panel.note}</p>}
       </CardHeader>
 
@@ -78,28 +105,31 @@ export function ModelPanel({
         </div>
       </CardContent>
 
-      <CardFooter className="flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs">
+      <CardFooter className="flex-col items-stretch gap-3 border-t pt-3">
         {panel.metrics ? (
           <>
-            <span title="Time to first token">TTFT {formatMs(panel.metrics.ttftMs)}</span>
-            <span>Total {formatMs(panel.metrics.latencyMs)}</span>
-            {panel.metrics.outputTokensPerSec !== undefined && (
-              <span title={panel.metrics.reasoned ? "Includes hidden reasoning tokens" : "Output tokens per second"}>
-                {formatTps(panel.metrics.outputTokensPerSec)}
-              </span>
-            )}
-            <span title={panel.metrics.tokensEstimated ? "Estimated: provider did not report usage" : undefined}>
-              {panel.metrics.inputTokens}→{panel.metrics.outputTokens} tok{panel.metrics.tokensEstimated ? "*" : ""}
-            </span>
-            <span>{formatUsd(panel.metrics.costUsd)}</span>
-            {panel.metrics.attempts > 1 && <span>{panel.metrics.attempts} attempts</span>}
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+              <Stat label="First token" value={formatMs(panel.metrics.ttftMs)} best={wins.has("ttftMs")} hint="Time until the answer starts to appear" />
+              <Stat label="Total time" value={formatMs(panel.metrics.latencyMs)} best={wins.has("latencyMs")} />
+              <Stat
+                label="Speed"
+                value={formatTps(panel.metrics.outputTokensPerSec) + (panel.metrics.reasoned ? "*" : "")}
+                best={wins.has("outputTokensPerSec")}
+                hint={panel.metrics.reasoned ? "Includes hidden reasoning tokens" : "Output tokens per second"}
+              />
+              <Stat label="Cost" value={formatUsd(panel.metrics.costUsd)} best={wins.has("costUsd")} />
+            </dl>
+            <p className="text-muted-foreground text-xs" title={panel.metrics.tokensEstimated ? "Estimated: provider did not report usage" : undefined}>
+              {panel.metrics.inputTokens} tokens in · {panel.metrics.outputTokens} tokens out{panel.metrics.tokensEstimated ? " (estimated)" : ""}
+              {panel.metrics.attempts > 1 && ` · ${panel.metrics.attempts} attempts`}
+            </p>
           </>
         ) : (
-          <span className="text-muted-foreground">No metrics yet</span>
+          <span className="text-muted-foreground text-xs">No metrics yet</span>
         )}
-        {score && <span className="font-medium">Judge: {score.overall}/10</span>}
         {canVote && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="flex items-center gap-1 border-t pt-3">
+            <span className="text-muted-foreground mr-1 text-xs">Rate this answer</span>
             <Button
               size="icon"
               variant={rating === "up" ? "default" : "ghost"}
@@ -120,12 +150,33 @@ export function ModelPanel({
             >
               <ThumbsDown />
             </Button>
-            <Button size="sm" variant={voted ? "default" : "outline"} onClick={onVote}>
-              <Crown /> {voted ? "Your pick" : "Best answer"}
+            <Button size="sm" className="ml-auto" variant={voted ? "default" : "outline"} onClick={onVote}>
+              <Crown /> {voted ? "Your pick" : "Pick as best"}
             </Button>
           </div>
         )}
       </CardFooter>
     </Card>
+  );
+}
+
+function WinChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium">
+      <Trophy className="size-3" />
+      {children}
+    </span>
+  );
+}
+
+function Stat({ label, value, best, hint }: { label: string; value: string; best: boolean; hint?: string }) {
+  return (
+    <div title={hint}>
+      <dt className="text-muted-foreground text-[11px]">
+        {label}
+        {best && <span className="text-primary font-medium"> · best</span>}
+      </dt>
+      <dd className={cn("text-sm font-medium whitespace-nowrap tabular-nums", best && "text-primary font-semibold")}>{value}</dd>
+    </div>
   );
 }

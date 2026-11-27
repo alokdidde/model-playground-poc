@@ -64,3 +64,25 @@ export function rankByMetric(values: { model: string; value: number | null | und
   const unknown = values.filter((v) => typeof v.value !== "number").map(({ model }) => ({ model, value: null, share: 0, timesBest: null, isBest: false }));
   return [...ranked, ...unknown];
 }
+
+/** Same wording as the "How the models did" tiles. */
+export const WIN_LABELS: Record<MetricKey, string> = {
+  ttftMs: "Starts answering first",
+  latencyMs: "Finishes first",
+  outputTokensPerSec: "Writes fastest",
+  costUsd: "Cheapest",
+};
+
+/** For each model, the metrics it is best (or tied best) on. Empty when only one model ran. */
+export function winsByModel(rows: { model: string; metrics: CallMetrics }[]): Map<string, Set<MetricKey>> {
+  const wins = new Map(rows.map((r) => [r.model, new Set<MetricKey>()]));
+  if (rows.length < 2) return wins;
+  for (const key of Object.keys(WIN_LABELS) as MetricKey[]) {
+    const ranked = rankByMetric(
+      rows.map((r) => ({ model: r.model, value: r.metrics[key] })),
+      key === "outputTokensPerSec",
+    );
+    for (const r of ranked) if (r.isBest) wins.get(r.model)!.add(key);
+  }
+  return wins;
+}

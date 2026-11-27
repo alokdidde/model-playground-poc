@@ -1,5 +1,6 @@
-import { AdvisorView } from "@/components/advisor/advisor-view";
+import { redirect } from "next/navigation";
 
+/** Renamed to "Help me choose"; keep old links working. */
 export default function AdvisorPage() {
-  return <AdvisorView />;
+  redirect("/choose");
 }

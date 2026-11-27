@@ -150,7 +150,7 @@ export const CreateEvalRunSchema = z
 export type CreateEvalRun = z.infer<typeof CreateEvalRunSchema>;
 export type CreateEvalRunInput = z.input<typeof CreateEvalRunSchema>;
 
-/** "Ask FOMO": a use case in plain words. */
+/** "Help me choose": a use case in plain words. */
 export const AdvisorRequestSchema = z.object({
   query: z.string().trim().min(10, "Describe your use case in a sentence or two").max(2_000),
 });
@@ -159,6 +159,12 @@ export type AdvisorRequest = z.infer<typeof AdvisorRequestSchema>;
 export const ListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().max(64).optional(),
+});
+
+/** GET /api/compare: past comparisons, newest first. `before` is the last id of the previous page. */
+export const CompareListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  before: z.string().min(1).max(64).optional(),
 });
 
 export const LeaderboardQuerySchema = z.object({

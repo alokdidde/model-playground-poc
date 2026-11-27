@@ -49,6 +49,46 @@ export async function createComparison(input: CompareRequest, requestId: string,
   });
 }
 
+export interface ComparisonSummary {
+  id: string;
+  prompt: string;
+  models: string[];
+  taskType: string;
+  status: string;
+  createdAt: Date;
+  winnerModel: string | null;
+  preferredModel: string | null;
+}
+
+/** Run history, newest first, one page at a time. Prompts are cut short; open a run for the full text. */
+export async function listComparisons(limit: number, before?: string): Promise<{ items: ComparisonSummary[]; nextCursor: string | null }> {
+  const rows = await prisma.comparison.findMany({
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: limit + 1,
+    ...(before ? { cursor: { id: before }, skip: 1 } : {}),
+    select: {
+      id: true,
+      prompt: true,
+      models: true,
+      taskType: true,
+      status: true,
+      createdAt: true,
+      judgement: { select: { winnerModel: true } },
+      vote: { select: { preferredModel: true } },
+    },
+  });
+  const page = rows.slice(0, limit);
+  return {
+    items: page.map(({ judgement, vote, prompt, ...r }) => ({
+      ...r,
+      prompt: prompt.length > 200 ? `${prompt.slice(0, 200)}…` : prompt,
+      winnerModel: judgement?.winnerModel ?? null,
+      preferredModel: vote?.preferredModel ?? null,
+    })),
+    nextCursor: rows.length > limit ? page[page.length - 1]!.id : null,
+  };
+}
+
 /**
  * Step 2 (inside the stream): call every model in parallel, stream their
  * tokens, record each result as soon as it finishes, then run the judge.

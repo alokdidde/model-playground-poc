@@ -38,7 +38,7 @@ Return only JSON, no prose, with exactly these fields:
  "priority": {"quality": 0..1, "cost": 0..1, "speed": 0..1}  (relative importance; at least one > 0),
  "maxCostPerCallUsd": number or null  (only if the user states a budget per request or call),
  "maxLatencyMs": number or null  (only if the user states a response-time limit; it means time until the answer starts showing),
- "samplePrompts": [3 short, realistic prompts a user of this product would send],
+ "samplePrompts": [3 realistic prompts a user of this product would send. Each must be self-contained: include the code, text or data it refers to, so a model can answer it without asking for more],
  "summary": "one sentence restating what they need"}
 
 Task types:

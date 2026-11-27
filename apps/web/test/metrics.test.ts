@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CallMetrics } from "@fomo/shared";
-import { bestBy, effectiveUsdPerMTokens, formatTps, rankByMetric } from "../lib/metrics";
+import { bestBy, effectiveUsdPerMTokens, formatTps, rankByMetric, winsByModel } from "../lib/metrics";
 
 const m = (over: Partial<CallMetrics>): CallMetrics => ({
   latencyMs: 1_000,
@@ -74,5 +74,18 @@ describe("rankByMetric", () => {
       false,
     );
     expect(r.every((x) => x.isBest)).toBe(true);
+  });
+});
+
+describe("winsByModel", () => {
+  it("lists what each model won, and nothing for a single model", () => {
+    const rows = [
+      { model: "a", metrics: m({ ttftMs: 100, latencyMs: 900, outputTokensPerSec: 50, costUsd: 0.002 }) },
+      { model: "b", metrics: m({ ttftMs: 300, latencyMs: 500, outputTokensPerSec: 80, costUsd: 0.001 }) },
+    ];
+    const wins = winsByModel(rows);
+    expect([...wins.get("a")!]).toEqual(["ttftMs"]);
+    expect([...wins.get("b")!].sort()).toEqual(["costUsd", "latencyMs", "outputTokensPerSec"]);
+    expect(winsByModel(rows.slice(0, 1)).get("a")!.size).toBe(0);
   });
 });
