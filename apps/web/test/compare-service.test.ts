@@ -82,6 +82,11 @@ describe("executeComparison", () => {
 
     const verdict = events.find((e) => e.type === "judge.completed");
     expect(verdict && "verdict" in verdict && verdict.verdict.judgeModel).toBe(JUDGE);
+    // The fake judge always picks "A", which is a different model once the order is reversed:
+    // a position flip, so the verdict is a tie.
+    expect(verdict && "verdict" in verdict && verdict.verdict.orders).toBe(2);
+    expect(verdict && "verdict" in verdict && verdict.verdict.positionConsistent).toBe(false);
+    expect(verdict && "verdict" in verdict && verdict.verdict.winnerModel).toBeNull();
     expect(types).toContain("synthesis.completed");
 
     const done = events.at(-1);

@@ -133,6 +133,8 @@ export interface SavedComparison {
     scores: JudgeVerdict["scores"];
     latencyMs: number;
     costUsd: number | null;
+    orders: number;
+    positionConsistent: boolean | null;
   } | null;
   vote: { preferredModel: string | null } | null;
 }
@@ -180,6 +182,8 @@ export function restoreCompareState(c: SavedComparison): CompareState {
             winnerModel: j.winnerModel,
             rationale: j.rationale,
             scores: j.scores,
+            orders: j.orders,
+            positionConsistent: j.positionConsistent,
             // Only latency and cost are stored for the judge call.
             metrics: { latencyMs: j.latencyMs, inputTokens: 0, outputTokens: 0, tokensEstimated: true, costUsd: j.costUsd, attempts: 1 },
           },

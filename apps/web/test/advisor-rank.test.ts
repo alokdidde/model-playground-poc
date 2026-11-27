@@ -6,6 +6,8 @@ const row = (model: string, over: Partial<LeaderboardRow>): LeaderboardRow => ({
   model,
   judged: 10,
   avgScore: 8,
+  scoreCi95: null,
+  runs: 1,
   winRate: null,
   humanVotes: 0,
   calls: 10,

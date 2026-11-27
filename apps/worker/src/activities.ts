@@ -111,7 +111,12 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
   const candidates = outcomes.filter((o) => o.ok).map(({ model, output }) => ({ model, output }));
   if (candidates.length === 0) return;
 
+  // Reference-guided judging: the judge also sees each answer's automatic check results.
+  const checked = await prisma.evalResult.findMany({ where: { runId, promptIndex, status: "SUCCEEDED" }, select: { model: true, checks: true } });
+  const checks = Object.fromEntries(checked.map((r) => [r.model, (r.checks as { name: string; passed: boolean }[] | null) ?? []]));
+
   let winnerModel: string | null = null;
+  let positionConsistent: boolean | null = null;
   let rationale: string;
   let scores: Map<string, JudgeScore> = new Map();
   try {
@@ -120,6 +125,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
       {
         prompt: ctx.prompt,
         expected: ctx.expected ?? undefined,
+        checks,
         taskType: ctx.taskType,
         candidates,
         judgeModel: ctx.judgeModel,
@@ -128,6 +134,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
       { lane: "batch", maxQueueWaitMs: 5 * 60_000, maxAttempts: 5 },
     );
     winnerModel = verdict.winnerModel;
+    positionConsistent = verdict.positionConsistent ?? null;
     rationale = verdict.rationale;
     scores = new Map(verdict.scores.map((s) => [s.model, s]));
   } catch (error) {
@@ -137,7 +144,7 @@ export async function judgePrompt(runId: string, promptIndex: number, outcomes: 
   await prisma.$transaction([
     prisma.evalPrompt.update({
       where: { runId_index: { runId, index: promptIndex } },
-      data: { winnerModel, judgeRationale: rationale, judgedAt: new Date() },
+      data: { winnerModel, positionConsistent, judgeRationale: rationale, judgedAt: new Date() },
     }),
     ...candidates.map((c) =>
       prisma.evalResult.update({

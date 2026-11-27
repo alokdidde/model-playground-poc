@@ -22,7 +22,8 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
         <CardTitle>Leaderboard</CardTitle>
         <CardDescription>
           Judge scores and win rates across batch evals and interactive comparisons, next to cost, latency and
-          reliability. Human votes from the compare view are shown separately.
+          reliability. Human votes from the compare view are shown separately. The ± range is a 95% confidence
+          interval: two models whose ranges overlap may not really differ yet.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -48,7 +49,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
               <TableRow>
                 <TableHead>#</TableHead>
                 <TableHead>Model</TableHead>
-                <TableHead>Avg judge score</TableHead>
+                <TableHead title="Mean overall judge score, ± 95% confidence interval, (number of judged answers)">Avg judge score</TableHead>
                 <TableHead>Win rate</TableHead>
                 <TableHead>Human votes</TableHead>
                 <TableHead>Avg latency</TableHead>
@@ -56,6 +57,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                 <TableHead title="Mean output tokens per second (includes reasoning tokens)">Speed</TableHead>
                 <TableHead>Avg cost / call</TableHead>
                 <TableHead>Error rate</TableHead>
+                <TableHead title="Distinct compares and eval runs">Runs</TableHead>
                 <TableHead>Calls</TableHead>
               </TableRow>
             </TableHeader>
@@ -64,7 +66,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                 <TableRow key={r.model}>
                   <TableCell>{i + 1}</TableCell>
                   <TableCell className="font-medium">{describeModel(r.model).label}</TableCell>
-                  <TableCell>{r.avgScore === null ? "–" : `${r.avgScore.toFixed(1)} (${r.judged})`}</TableCell>
+                  <TableCell>{r.avgScore === null ? "–" : `${r.avgScore.toFixed(1)}${r.scoreCi95 === null ? "" : ` ± ${r.scoreCi95.toFixed(1)}`} (${r.judged})`}</TableCell>
                   <TableCell>{pct(r.winRate)}</TableCell>
                   <TableCell>{r.humanVotes}</TableCell>
                   <TableCell>{formatMs(r.avgLatencyMs === null ? null : Math.round(r.avgLatencyMs))}</TableCell>
@@ -72,6 +74,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                   <TableCell>{formatTps(r.avgTokensPerSec)}</TableCell>
                   <TableCell>{formatUsd(r.avgCostUsd)}</TableCell>
                   <TableCell>{pct(r.errorRate)}</TableCell>
+                  <TableCell>{r.runs}</TableCell>
                   <TableCell>{r.calls}</TableCell>
                 </TableRow>
               ))}

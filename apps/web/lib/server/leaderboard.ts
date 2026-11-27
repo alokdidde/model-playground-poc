@@ -1,5 +1,6 @@
 import type { JudgeScore, TaskType } from "@fomo/shared";
 import { percentile } from "@/lib/eval-report";
+import { ci95HalfWidth } from "@/lib/stats";
 import { prisma } from "./services";
 
 export interface LeaderboardRow {
@@ -7,6 +8,10 @@ export interface LeaderboardRow {
   /** Answers the judge scored. */
   judged: number;
   avgScore: number | null;
+  /** ± half-width of the 95% confidence interval of avgScore (null below 2 judged answers). */
+  scoreCi95: number | null;
+  /** Distinct compares and eval runs this model took part in. */
+  runs: number;
   /** Share of judged prompts this model won. */
   winRate: number | null;
   /** Times a human preferred this model in the compare view. */
@@ -32,6 +37,7 @@ interface Acc {
   wins: number;
   contests: number;
   votes: number;
+  runs: Set<string>;
 }
 
 /**
@@ -45,7 +51,7 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
   const acc = new Map<string, Acc>();
   const get = (model: string) => {
     let a = acc.get(model);
-    if (!a) acc.set(model, (a = { calls: 0, failures: 0, latency: [], ttft: [], tps: [], cost: [], scores: [], wins: 0, contests: 0, votes: 0 }));
+    if (!a) acc.set(model, (a = { calls: 0, failures: 0, latency: [], ttft: [], tps: [], cost: [], scores: [], wins: 0, contests: 0, votes: 0, runs: new Set() }));
     return a;
   };
   const addCall = (r: {
@@ -83,6 +89,7 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
     const judged = new Set(prompts.map((p) => `${p.runId}:${p.index}`));
     for (const r of results) {
       addCall(r);
+      get(r.model).runs.add(`eval:${r.runId}`);
       if (r.score !== null) get(r.model).scores.push(r.score);
       if (r.status === "SUCCEEDED" && judged.has(`${r.runId}:${r.promptIndex}`)) get(r.model).contests++;
     }
@@ -93,13 +100,17 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
     const comparisons = await prisma.comparison.findMany({
       where: taskType ? { taskType } : {},
       select: {
+        id: true,
         results: { select: { model: true, status: true, latencyMs: true, ttftMs: true, outputTokensPerSec: true, costUsd: true } },
         judgement: true,
         vote: true,
       },
     });
     for (const c of comparisons) {
-      c.results.forEach(addCall);
+      for (const r of c.results) {
+        addCall(r);
+        get(r.model).runs.add(`compare:${c.id}`);
+      }
       if (c.judgement) {
         for (const s of c.judgement.scores as unknown as JudgeScore[]) {
           get(s.model).scores.push(s.overall);
@@ -117,6 +128,8 @@ export async function getLeaderboard(source: "all" | "evals" | "compare", taskTy
       model,
       judged: a.scores.length,
       avgScore: avg(a.scores),
+      scoreCi95: ci95HalfWidth(a.scores),
+      runs: a.runs.size,
       winRate: a.contests ? a.wins / a.contests : null,
       humanVotes: a.votes,
       calls: a.calls,

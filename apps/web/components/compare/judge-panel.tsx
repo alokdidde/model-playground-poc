@@ -4,7 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { CompareState } from "@/lib/compare-state";
 
-export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState["judge"]; label?: (id: string) => string }) {
+const wordCount = (text: string) => (text.trim() ? text.trim().split(/\s+/).length : 0);
+
+export function JudgePanel({
+  judge,
+  label = (id) => id,
+  outputs = {},
+}: {
+  judge: CompareState["judge"];
+  label?: (id: string) => string;
+  /** The answers, to show each one's length next to its score (judges tend to favour longer answers). */
+  outputs?: CompareState["panels"];
+}) {
   if (judge.status === "off") return null;
   const verdict = judge.verdict;
 
@@ -15,10 +26,11 @@ export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState[
           <Gavel className="text-primary size-4" /> Judge scores
           {judge.model && <Badge variant="outline">judge: {label(judge.model)}</Badge>}
           {verdict?.selfJudged && <Badge variant="warning">judge is also a contestant</Badge>}
+          {verdict?.positionConsistent === false && <Badge variant="warning">tie: order changed the winner</Badge>}
         </CardTitle>
         <CardDescription>
-          Answers are shuffled and anonymised before an independent model scores them. Treat this as a second opinion,
-          not ground truth.
+          Answers are anonymised and scored by an independent model{verdict?.orders === 2 ? " twice, in two orders, and averaged" : ""}.
+          If the order changes the winner, it counts as a tie. Treat this as a second opinion, not ground truth.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -36,7 +48,10 @@ export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState[
         {verdict && (
           <>
             <p className="text-sm">
-              <span className="font-medium">Winner: {verdict.winnerModel ? label(verdict.winnerModel) : "none"}.</span> {verdict.rationale}
+              <span className="font-medium">
+                Winner: {verdict.winnerModel ? label(verdict.winnerModel) : verdict.positionConsistent === false ? "tie" : "none"}.
+              </span>{" "}
+              {verdict.rationale}
             </p>
             <Table>
               <TableHeader>
@@ -46,6 +61,7 @@ export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState[
                   <TableHead>Helpfulness</TableHead>
                   <TableHead>Clarity</TableHead>
                   <TableHead>Overall</TableHead>
+                  <TableHead title="Answer length. Judges tend to favour longer answers, so check that a high score isn't just length.">Words</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -58,6 +74,7 @@ export function JudgePanel({ judge, label = (id) => id }: { judge: CompareState[
                       <TableCell>{s.helpfulness}</TableCell>
                       <TableCell>{s.clarity}</TableCell>
                       <TableCell className="font-semibold">{s.overall}</TableCell>
+                      <TableCell className="text-muted-foreground">{outputs[s.model] ? wordCount(outputs[s.model]!.output) : "—"}</TableCell>
                     </TableRow>
                   ))}
               </TableBody>

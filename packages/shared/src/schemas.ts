@@ -239,10 +239,16 @@ export interface JudgeVerdict {
   judgeModel: string;
   /** True when no neutral judge was available and a contestant judged. */
   selfJudged: boolean;
+  /** Null when the answers tie, including when the two orders disagree. */
   winnerModel: string | null;
   rationale: string;
+  /** Averaged over both orders when the judge saw both. */
   scores: JudgeScore[];
   metrics: CallMetrics;
+  /** How many answer orders were judged: 2 normally, 1 if one judge call failed (or for old runs). */
+  orders?: number;
+  /** Both orders picked the same winner. False means a position flip, counted as a tie. Null with one order. */
+  positionConsistent?: boolean | null;
 }
 
 export type RunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED";
