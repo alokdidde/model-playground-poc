@@ -165,6 +165,7 @@ Each selected model carries its own `temperature`, `topP`, `maxTokens`, `reasoni
 | Kimi K3 | `top_p` (must be 0.95) |
 | Ministral 3 14B, GLM-5.2 | `reasoning_effort` |
 | All Anthropic, proprietary OpenAI, Arcee | everything (403, not on this account's tier) |
+| `typesafe-jev-1.13.0` | everything (404 "model not found", though `/v1/models` lists it; probed 2026-11-27) |
 
 The UI disables unsupported controls with the reason, the server rejects explicit unsupported settings with a 400 problem pointing at the exact field, and request-level defaults (e.g. temperature 0.7) are silently left out for models that reject them. What was actually sent is stored per result (`CompareResult.settings`) so any comparison can be reproduced.
 

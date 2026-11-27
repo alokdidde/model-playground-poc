@@ -71,13 +71,17 @@ const KIND_RULES: [RegExp, ModelKind][] = [
 ];
 
 /**
- * Proprietary OpenAI/Anthropic models (and Arcee) answer 403 "not available
- * for your subscription tier" on the account this PoC runs on. They are marked
- * unavailable, and `GET /api/models` and the compare API leave them out.
+ * Models this account can't call, so `GET /api/models` and the compare API
+ * leave them out:
+ * - proprietary OpenAI/Anthropic models (and Arcee) answer 403 "not available
+ *   for your subscription tier";
+ * - `typesafe-*` is listed by `/v1/models` but answers 404 "model not found"
+ *   (probed 2026-11-27).
+ * Router models (`router:*`) are filtered out by kind, not here.
  */
 function isAvailable(id: string): boolean {
   if (id === "openai-gpt-oss-120b") return true;
-  return !/^(openai-|anthropic-|arcee-)/.test(id);
+  return !/^(openai-|anthropic-|arcee-|typesafe-)/.test(id);
 }
 
 function kindOf(id: string): ModelKind {
