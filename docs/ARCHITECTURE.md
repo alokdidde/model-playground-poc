@@ -36,7 +36,9 @@ Everything runs on DigitalOcean: models from **serverless inference** (OpenAI-co
 
 ### Caveat: what this account can call
 
-On the account this PoC runs on, every Anthropic model and every proprietary OpenAI model returns `403 "not available for your subscription tier"`; `gpt-oss-120b` and the open-weight families (DeepSeek, GLM, Kimi, Qwen, MiniMax, Mistral, NVIDIA) work. That means the demo cannot show the most common FOMO question, *"is a cheap open model good enough versus a frontier model?"*. The catalog still lists the locked models (with "Not on plan") so the experience is honest about what exists. On a higher tier nothing in the code changes.
+On the account this PoC runs on, every Anthropic model and every proprietary OpenAI model returns `403 "not available for your subscription tier"`; `gpt-oss-120b` and the open-weight families (DeepSeek, GLM, Kimi, Qwen, MiniMax, Mistral, NVIDIA) work. That means the demo cannot show the most common FOMO question, *"is a cheap open model good enough versus a frontier model?"*. The catalog lists only models this account can call: `GET /api/models` drops plan-blocked models (and every non-chat model, see below), and the compare API rejects them, so a user is never offered a model that can only fail. On a higher tier, the allow rule in `catalog.ts` (`isAvailable`) is the one line that changes.
+
+The catalog also lists only text-generation (chat) models. The brief compares outputs for one input, and embedding, reranker, image, audio, video and router models don't answer a prompt with text, so there is nothing to judge side by side. Comparing them is a roadmap item.
 
 ## 2. System overview
 

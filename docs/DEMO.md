@@ -19,7 +19,7 @@ About 5 minutes on the live app: https://model-fomo-qlrb3.ondigitalocean.app. Op
 | 3 | Wait for the judge and the synthesis. | The judge is a model that isn't competing, and the answers are anonymised and shuffled. The synthesis cites each model. The recommendation names the trade-off. Change the priority to **Cost** and watch the pick change. |
 | 4 | Open `/ops/rate-limits?tag=<run id>` (the id is in the run URL). It is an ops view, so it is not in the nav. | Every lease, wait, 429, cooldown and retry for this compare, with how long each retry slept and why. `/ops/rate-limits` alone shows the last 30 minutes across all compares. |
 | 5 | **Home** → a recent run. | Every run keeps its own page with answers, judge and metrics. There is no cross-run leaderboard on purpose: different prompts have different expectations, so averaging their scores would mislead. |
-| 6 | Optional: show a failure. Pick a model the plan blocks (any Anthropic model shows as unavailable), or point at a `PARTIAL` run in history. | One failing model never hides the others, and the error names the model and the reason. |
+| 6 | Optional: show a failure. Point at a `PARTIAL` run in history. (The catalog only lists models this account can call, so plan-blocked models like Anthropic never appear.) | One failing model never hides the others, and the error names the model and the reason. |
 
 ## If something goes wrong live
 

@@ -19,7 +19,7 @@ export default async function HomePage() {
     <div className="mx-auto max-w-5xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Which model should you use?</h1>
-        <p className="text-muted-foreground mt-1">Try the models on DigitalOcean side by side and see which one is worth it for your work.</p>
+        <p className="text-muted-foreground mt-1">Try the models side by side and see which one is worth it for your work.</p>
       </div>
 
       <Link href="/compare" className="group block">

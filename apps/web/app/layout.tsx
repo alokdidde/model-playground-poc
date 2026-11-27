@@ -12,7 +12,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "Model FOMO",
-  description: "Send one prompt to many models on DigitalOcean and see which answer is best.",
+  description: "Send one prompt to many models and see which answer is best.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

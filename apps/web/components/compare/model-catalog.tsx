@@ -6,7 +6,6 @@ import type { ModelInfo } from "@fomo/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -37,10 +36,9 @@ const SORT_LABELS: Record<SortKey, string> = {
   context: "Context window",
 };
 
-/** Models first by usefulness here: callable chat models, curated ones (with tags), then the rest. */
+/** Curated models (with tags) first, then the rest. The API only lists models that can be compared. */
 function rank(m: ModelInfo, query: string): number {
   let score = 0;
-  if (m.kind === "chat" && m.available) score += 100;
   if (m.tags.length > 0) score += 10;
   if (query && m.label.toLowerCase().startsWith(query)) score += 50;
   return score;
@@ -64,16 +62,13 @@ export function ModelCatalog({
   const [price, setPrice] = useState<PriceFilter>("any");
   const [speed, setSpeed] = useState<SpeedFilter>("any");
   const [sort, setSort] = useState<SortKey>("best");
-  const [showAll, setShowAll] = useState(false);
 
   const allProviders = useMemo(() => [...new Set(models.map((m) => m.provider))].sort(), [models]);
   const allTags = useMemo(() => [...new Set(models.flatMap((m) => m.tags))].sort(), [models]);
-  const hiddenCount = models.filter((m) => m.kind !== "chat" || !m.available).length;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const out = models.filter((m) => {
-      if (!showAll && (m.kind !== "chat" || !m.available)) return false;
       if (q && !`${m.label} ${m.id} ${m.provider}`.toLowerCase().includes(q)) return false;
       if (providers.length && !providers.includes(m.provider)) return false;
       if (tags.length && !tags.some((t) => m.tags.includes(t))) return false;
@@ -92,10 +87,10 @@ export function ModelCatalog({
       context: (a, b) => (b.contextWindow ?? 0) - (a.contextWindow ?? 0) || byName(a, b),
     };
     return out.sort(sorters[sort]);
-  }, [models, query, providers, tags, price, speed, sort, showAll]);
+  }, [models, query, providers, tags, price, speed, sort]);
 
   // What "Add all" would add: the models shown right now (after search and filters) that can be compared.
-  const addable = visible.filter((m) => m.kind === "chat" && m.available && !selectedIds.includes(m.id)).map((m) => m.id);
+  const addable = visible.filter((m) => !selectedIds.includes(m.id)).map((m) => m.id);
 
   const toggle = (list: string[], value: string, set: (v: string[]) => void) =>
     set(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -168,18 +163,12 @@ export function ModelCatalog({
               <Plus /> Add all {addable.length}
             </Button>
           )}
-          {hiddenCount > 0 && (
-            <label className="text-muted-foreground flex cursor-pointer items-center gap-1.5 text-xs" title="Models your plan can't call, and embedding / image / audio models">
-              <Checkbox checked={showAll} onCheckedChange={(v) => setShowAll(v === true)} /> Show {hiddenCount} more
-            </label>
-          )}
         </div>
       </div>
 
       <ul className="max-h-[34rem] divide-y overflow-y-auto border-t lg:max-h-[calc(100vh-22rem)]">
         {visible.map((m) => {
           const added = selectedIds.includes(m.id);
-          const reason = m.kind !== "chat" ? "Not a chat model" : !m.available ? "Not available on your DO plan" : undefined;
           return (
             <li key={m.id} className={cn("flex items-center gap-3 px-4 py-2.5", added && "bg-accent-soft/60")}>
               <ProviderAvatar provider={m.provider} />
@@ -192,7 +181,6 @@ export function ModelCatalog({
                   {m.pricing && <span title="USD per 1M input / output tokens">· ${m.pricing.inputPerM}/${m.pricing.outputPerM}</span>}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1">
-                  {!m.available && m.kind === "chat" && <Badge variant="outline" className="text-muted-foreground">Not on plan</Badge>}
                   {m.tags.slice(0, 2).map((t) => (
                     <Badge key={t} variant="outline" className="bg-accent-soft text-accent-soft-foreground border-transparent">
                       {t}
@@ -205,7 +193,7 @@ export function ModelCatalog({
                   <Check className="size-4" /> Added
                 </span>
               ) : (
-                <Button size="sm" variant="outline" disabled={Boolean(reason)} title={reason} onClick={() => onAdd(m.id)} className="text-primary">
+                <Button size="sm" variant="outline" onClick={() => onAdd(m.id)} className="text-primary">
                   Add
                 </Button>
               )}

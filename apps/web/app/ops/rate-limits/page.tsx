@@ -63,7 +63,7 @@ export default async function RateLimitsPage({ searchParams }: { searchParams: P
                     <TableHead title="Failed attempts / successful attempts">Failed / ok</TableHead>
                     <TableHead title="Latency of successful attempts, p50 / p95">Latency</TableHead>
                     <TableHead title="Lowest and last AIMD factor">AIMD</TableHead>
-                    <TableHead title="Limits learned from DO's x-ratelimit headers">Learned limits</TableHead>
+                    <TableHead title="Limits learned from the provider's x-ratelimit headers">Learned limits</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

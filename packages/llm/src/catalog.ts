@@ -72,8 +72,8 @@ const KIND_RULES: [RegExp, ModelKind][] = [
 
 /**
  * Proprietary OpenAI/Anthropic models (and Arcee) answer 403 "not available
- * for your subscription tier" on the account this PoC runs on. The catalog
- * still lists them so users can see what exists, but disables "Add".
+ * for your subscription tier" on the account this PoC runs on. They are marked
+ * unavailable, and `GET /api/models` and the compare API leave them out.
  */
 function isAvailable(id: string): boolean {
   if (id === "openai-gpt-oss-120b") return true;
